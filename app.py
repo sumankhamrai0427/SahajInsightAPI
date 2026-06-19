@@ -34,6 +34,8 @@ from controller.get_all_company_admins import get_all_company_admins_controller
 from controller.company_get_users import get_company_users_controller
 from controller.contact_handel import handle_contact_controller
 from controller.llm_web_search import llm_web_search_controller
+from controller.summarize_sources import summarize_sources_controller
+
 
 from controller.seo_api import create_seo_entry_controller,update_seo_entry_controller,delete_seo_entry_controller,get_seo_data_controller,get_seo_by_path_controller
 from controller.rag_controller import (
@@ -112,6 +114,12 @@ def chat_endpoint_route():
 @app.route("/llm_web_search", methods=["POST"])
 def llm_web_search_route():
     return llm_web_search_controller()
+
+
+@app.route("/summarize_sources", methods=["POST"])
+def summarize_sources_route():
+    return summarize_sources_controller()
+
 
 
 @app.route("/rag/ingest/web_search", methods=["POST"])
