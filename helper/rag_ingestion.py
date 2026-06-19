@@ -1,0 +1,261 @@
+import pandas as pd
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from database.vector_db import add_chunks_to_chroma
+from database.graph_db import add_graph_data
+from helper.web_search import live_web_search
+from model.llm_client import call_llm
+from database.dbConnection import get_company_db
+import hashlib
+import json
+import re
+
+# Text Splitter for Vector DB
+text_splitter = RecursiveCharacterTextSplitter(
+    chunk_size=500,
+    chunk_overlap=50,
+    length_function=len,
+    is_separator_regex=False,
+)
+
+def extract_entities_with_llm(text_chunk: str):
+    """
+    Uses the LLM to extract nodes (entities) and edges (relationships) from text.
+    """
+    prompt = f"""
+    You are a data architect extracting graph data.
+    Extract the main entities and their relationships from the text below.
+    
+    Text: {text_chunk}
+    
+    Return ONLY a JSON object exactly matching this structure (no markdown, no explanations):
+    {{
+      "nodes": [
+        {{"_key": "unique_id_1", "type": "Category", "name": "Value"}},
+        {{"_key": "unique_id_2", "type": "Category", "name": "Value"}}
+      ],
+      "edges": [
+        {{"_from": "unique_id_1", "_to": "unique_id_2", "type": "RELATIONSHIP_NAME"}}
+      ]
+    }}
+    Make _key lowercase alphanumeric.
+    """
+    
+    try:
+        response = call_llm(prompt)
+        # Find the first { and last } to extract JSON
+        start_idx = response.find("{")
+        end_idx = response.rfind("}")
+        if start_idx != -1 and end_idx != -1 and start_idx < end_idx:
+            clean_json = response[start_idx:end_idx+1]
+        else:
+            clean_json = "{}"
+            
+        data = json.loads(clean_json)
+        return data.get("nodes", []), data.get("edges", [])
+    except Exception as e:
+        print(f"[LLM Extraction Error] {e}")
+        return [], []
+
+def process_and_store_data(company_code: str, session_id: str, df: pd.DataFrame, source_name: str, workspace_id: str = None):
+    """
+    Core pipeline that pushes dataframe content to ChromaDB and ArangoDB.
+    """
+    if df.empty:
+        return False, "Dataframe is empty"
+        
+    all_chunks = []
+    metadatas = []
+    ids = []
+    
+    all_nodes = []
+    all_edges = []
+    
+    # Process each row into a text chunk
+    for idx, row in df.iterrows():
+        row_dict = row.dropna().to_dict()
+        if not row_dict:
+            continue
+            
+        # Create text representation of the row
+        text_content = ", ".join([f"{k}: {v}" for k, v in row_dict.items()])
+        
+        # Split into smaller chunks if necessary (though usually a row is small enough)
+        chunks = text_splitter.split_text(text_content)
+        
+        for i, chunk in enumerate(chunks):
+            chunk_id = hashlib.md5(f"{session_id}_{source_name}_{idx}_{i}".encode()).hexdigest()
+            all_chunks.append(chunk)
+            metadatas.append({
+                "source": source_name,
+                "session_id": session_id,
+                "workspace_id": workspace_id,
+                "row_index": idx
+            })
+            ids.append(chunk_id)
+            
+            # Extract graph data ONLY for web search (too slow/expensive for full CSVs)
+            if "web_search" in source_name:
+                nodes, edges = extract_entities_with_llm(chunk)
+                for n in nodes: n["workspace_id"] = workspace_id
+                for e in edges: e["workspace_id"] = workspace_id
+                all_nodes.extend(nodes)
+                all_edges.extend(edges)
+
+    # 1. Store in ChromaDB
+    try:
+        add_chunks_to_chroma(company_code, all_chunks, metadatas, ids)
+    except Exception as e:
+        return False, f"ChromaDB Error: {e}"
+
+    # 2. Store in ArangoDB
+    try:
+        add_graph_data(company_code, all_nodes, all_edges)
+    except Exception as e:
+        print(f"ArangoDB Error: {e}")
+
+    # 3. Store in normalized_knowledge (MySQL)
+    try:
+        db = get_company_db(company_code)
+        if db:
+            cursor = db.cursor()
+            source_type = "web_search" if "web_search" in source_name else "csv"
+            
+            # Fix empty workspace_id
+            safe_workspace_id = None if not workspace_id or str(workspace_id).strip() == "" else workspace_id
+            
+            insert_sql = """
+                INSERT INTO normalized_knowledge 
+                (company_code, session_id, workspace_id, source_type, source_name, content, metadata)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """
+            
+            # Prepare data
+            mysql_data = []
+            for i, chunk in enumerate(all_chunks):
+                mysql_data.append((
+                    company_code,
+                    session_id,
+                    safe_workspace_id,
+                    source_type,
+                    source_name,
+                    chunk,
+                    json.dumps(metadatas[i])
+                ))
+                
+            cursor.executemany(insert_sql, mysql_data)
+            db.commit()
+            cursor.close()
+            db.close()
+    except Exception as e:
+        print(f"MySQL Normalized Knowledge Error: {e}")
+
+    return True, f"Stored {len(all_chunks)} chunks in Vector DB, Graph DB, and MySQL."
+
+def process_and_store_text(company_code: str, session_id: str, text: str, source_name: str, workspace_id: str = None):
+    """
+    Direct pipeline for unstructured text (like web search responses) to avoid CSV conversion failures.
+    """
+    if not text or not text.strip():
+        return False, "Text is empty"
+        
+    all_chunks = text_splitter.split_text(text)
+    metadatas = []
+    ids = []
+    
+    all_nodes = []
+    all_edges = []
+    
+    for i, chunk in enumerate(all_chunks):
+        chunk_id = hashlib.md5(f"{session_id}_{source_name}_{i}".encode()).hexdigest()
+        metadatas.append({
+            "source": source_name,
+            "session_id": session_id,
+            "workspace_id": workspace_id,
+            "chunk_index": i
+        })
+        ids.append(chunk_id)
+        
+        # Extract graph data for web search
+        nodes, edges = extract_entities_with_llm(chunk)
+        for n in nodes: n["workspace_id"] = workspace_id
+        for e in edges: e["workspace_id"] = workspace_id
+        all_nodes.extend(nodes)
+        all_edges.extend(edges)
+
+    # 1. Store in ChromaDB
+    try:
+        add_chunks_to_chroma(company_code, all_chunks, metadatas, ids)
+    except Exception as e:
+        return False, f"ChromaDB Error: {e}"
+
+    # 2. Store in ArangoDB
+    try:
+        if all_nodes or all_edges:
+            add_graph_data(company_code, all_nodes, all_edges)
+    except Exception as e:
+        print(f"ArangoDB Error: {e}")
+
+    # 3. Store in normalized_knowledge (MySQL)
+    try:
+        db = get_company_db(company_code)
+        if db:
+            cursor = db.cursor()
+            source_type = "web_search"
+            
+            # Fix empty workspace_id
+            safe_workspace_id = None if not workspace_id or str(workspace_id).strip() == "" else workspace_id
+            
+            insert_sql = """
+                INSERT INTO normalized_knowledge 
+                (company_code, session_id, workspace_id, source_type, source_name, content, metadata)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """
+            
+            mysql_data = []
+            for i, chunk in enumerate(all_chunks):
+                mysql_data.append((
+                    company_code,
+                    session_id,
+                    safe_workspace_id,
+                    source_type,
+                    source_name,
+                    chunk,
+                    json.dumps(metadatas[i])
+                ))
+                
+            cursor.executemany(insert_sql, mysql_data)
+            db.commit()
+            cursor.close()
+            db.close()
+    except Exception as e:
+        print(f"MySQL Normalized Knowledge Error: {e}")
+
+    return True, f"Stored {len(all_chunks)} text chunks."
+
+def ingest_web_search(company_code: str, session_id: str, query: str, ai_response: str = None, workspace_id: str = None):
+    """
+    Pipeline for live web search data.
+    """
+    # 1. Use provided ai_response or fetch live data
+    if ai_response:
+        live_data = ai_response
+    else:
+        live_data = live_web_search(query)
+        if "Error" in live_data or "No recent" in live_data:
+            return False, live_data
+        
+    # Bypass CSV entirely
+    source_name = f"web_search_{query.replace(' ', '_')[:20]}"
+    return process_and_store_text(company_code, session_id, live_data, source_name, workspace_id)
+    
+def ingest_uploaded_csv(company_code: str, session_id: str, file_path: str, workspace_id: str = None):
+    """
+    Pipeline for user uploaded CSV.
+    """
+    try:
+        df = pd.read_csv(file_path)
+        import os
+        filename = os.path.basename(file_path)
+        return process_and_store_data(company_code, session_id, df, filename, workspace_id)
+    except Exception as e:
+        return False, f"CSV Processing Error: {e}"
