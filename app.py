@@ -25,6 +25,7 @@ from controller.admin_company_admin_register import (
     admin_company_admin_register_controller,
 )
 from middleware.dbContext import attach_company_db
+from database.dbConnection import teardown_db
 from controller.superadmin_login import superadmin_login_controller
 from controller.company_login import company_login_controller
 from controller.get_all_companies import get_all_companies_controller
@@ -70,6 +71,11 @@ CORS(app)
 @app.before_request
 def before_request():
     return attach_company_db()
+
+
+@app.teardown_appcontext
+def teardown_db_context(exception=None):
+    teardown_db(exception)
 
 
 @app.route("/")

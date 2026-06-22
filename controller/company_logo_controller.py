@@ -10,6 +10,8 @@ UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER")
 BASE_URL = os.getenv("BASE_URL")
 
 def update_company_logo_controller():
+    master = None
+    cursor = None
     try:
         company_id = request.form.get("company_id")
         logo_file = request.files.get("company_logo")
@@ -62,7 +64,9 @@ def update_company_logo_controller():
         master.commit()
 
         cursor.close()
+        cursor = None
         master.close()
+        master = None
 
         return build_response(
             True,
@@ -76,3 +80,14 @@ def update_company_logo_controller():
 
     except Exception as e:
         return build_response(False, "Server error", 500, data={"error": str(e)})
+    finally:
+        if cursor is not None:
+            try:
+                cursor.close()
+            except Exception:
+                pass
+        if master is not None:
+            try:
+                master.close()
+            except Exception:
+                pass

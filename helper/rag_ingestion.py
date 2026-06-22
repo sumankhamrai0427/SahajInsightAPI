@@ -117,6 +117,8 @@ def process_and_store_data(company_code: str, session_id: str, df: pd.DataFrame,
             print(f"ArangoDB Error: {e}")
 
     # 3. Store in normalized_knowledge (MySQL)
+    db = None
+    cursor = None
     try:
         db = get_company_db(company_code)
         if db:
@@ -147,10 +149,19 @@ def process_and_store_data(company_code: str, session_id: str, df: pd.DataFrame,
                 
             cursor.executemany(insert_sql, mysql_data)
             db.commit()
-            cursor.close()
-            db.close()
     except Exception as e:
         print(f"MySQL Normalized Knowledge Error: {e}")
+    finally:
+        if cursor is not None:
+            try:
+                cursor.close()
+            except Exception:
+                pass
+        if db is not None:
+            try:
+                db.close()
+            except Exception:
+                pass
 
     return True, f"Stored {len(all_chunks)} chunks in Vector DB, Graph DB, and MySQL."
 
@@ -202,6 +213,8 @@ def process_and_store_text(company_code: str, session_id: str, text: str, source
             print(f"ArangoDB Error: {e}")
 
     # 3. Store in normalized_knowledge (MySQL)
+    db = None
+    cursor = None
     try:
         db = get_company_db(company_code)
         if db:
@@ -261,11 +274,19 @@ def process_and_store_text(company_code: str, session_id: str, text: str, source
                 db.commit()
             except Exception as e_uf:
                 print(f"MySQL Uploaded Files Error for web search: {e_uf}")
-
-            cursor.close()
-            db.close()
     except Exception as e:
         print(f"MySQL Normalized Knowledge Error: {e}")
+    finally:
+        if cursor is not None:
+            try:
+                cursor.close()
+            except Exception:
+                pass
+        if db is not None:
+            try:
+                db.close()
+            except Exception:
+                pass
 
     return True, f"Stored {len(all_chunks)} text chunks."
 

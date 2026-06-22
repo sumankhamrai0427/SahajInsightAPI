@@ -1,7 +1,7 @@
 from flask import request
 import mysql.connector
 import os
-from database.dbConnection import get_master_db
+from database.dbConnection import get_master_db, get_company_db
 from helper.helperFunctions import build_response, allowed_logo
 from datetime import datetime
 import re
@@ -79,12 +79,7 @@ DB_ENGINE = os.getenv("DB_ENGINE", "InnoDB")
 # CREATE ALL STORED PROCEDURES INSIDE COMPANY DB
 # ==========================================================
 def create_stored_procedures(db_name):
-    conn = mysql.connector.connect(
-        host=MASTER_DB_HOST,
-        user=MASTER_DB_USER,
-        password=MASTER_DB_PASS,
-        database=db_name,
-    )
+    conn = get_company_db(db_name)
     c = conn.cursor()
 
 
@@ -996,6 +991,7 @@ END
         END
     """
     )
+    c.close()
 
 
 
