@@ -44,8 +44,11 @@ from controller.rag_controller import (
     rag_ingest_web_search_controller,
     rag_ingest_csv_controller,
     rag_ingest_selected_controller,
-    rag_chat_controller
+    rag_chat_controller,
+    save_rag_chat_controller,
+    get_rag_chat_history_controller
 )
+from controller.unified_chat_controller import unified_chat_controller
 from controller.workspace_controller import (
     create_workspace_controller,
     list_workspaces_controller,
@@ -108,6 +111,10 @@ def get_full_table_info_route():
 def get_dashboard_data_route():
     return get_dashboard_data_controller()
 
+
+@app.route("/chat/unified", methods=["POST"])
+def unified_chat_route():
+    return unified_chat_controller()
 
 @app.route("/chat_ai", methods=["POST"])
 def chat_endpoint_route():
