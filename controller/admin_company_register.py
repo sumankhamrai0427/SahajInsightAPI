@@ -417,7 +417,8 @@ END
         AND session_id = p_session_id
         AND table_extraction_status = 'done'
         AND column_extraction_status = 'done'
-        AND data_insights_status = 'done';
+        AND data_insights_status = 'done'
+        AND file_type != 'web_search';
 
 
 
@@ -435,6 +436,7 @@ END
             AND table_extraction_status = 'done'
             AND column_extraction_status = 'done'
             AND data_insights_status = 'done'
+            AND file_type != 'web_search'
         ) t
         JOIN INFORMATION_SCHEMA.COLUMNS c
         ON c.TABLE_NAME = t.table_name
@@ -452,7 +454,8 @@ END
         AND session_id = p_session_id
         AND table_extraction_status = 'done'
         AND column_extraction_status = 'done'
-        AND data_insights_status = 'done';
+        AND data_insights_status = 'done'
+        AND file_type != 'web_search';
     END
     """
     )

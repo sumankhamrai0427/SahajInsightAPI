@@ -19,6 +19,7 @@ def create_workspace_controller():
         workspace_name = data.get("workspace_name")
         session_id = data.get("session_id")
         created_by = data.get("created_by")
+        user_email = data.get("user_email")
         
         if not workspace_name or not session_id or not created_by:
             return build_response(False, "workspace_name, session_id, and created_by are required", 400)
@@ -28,11 +29,32 @@ def create_workspace_controller():
             return build_response(False, "Invalid session", 401)
             
         company_db = get_company_db(company_db_name)
-        c = company_db.cursor()
+        c = company_db.cursor(dictionary=True)
         
+        # Look up email if not provided
+        if not user_email:
+            c.execute("SELECT email FROM users WHERE user_id = %s", (created_by,))
+            user_row = c.fetchone()
+            user_email = user_row["email"] if user_row else None
+            
+        if not user_email:
+            c.close()
+            company_db.close()
+            return build_response(False, "User email not found", 400)
+
+        # Check for duplicates
+        c.execute("SELECT id FROM workspaces WHERE workspace_name = %s", (workspace_name,))
+        if c.fetchone():
+            c.close()
+            company_db.close()
+            return build_response(False, f"Workspace name '{workspace_name}' already exists", 400)
+            
         c.execute("INSERT INTO workspaces (workspace_name, created_by) VALUES (%s, %s)", (workspace_name, created_by))
-        company_db.commit()
         workspace_id = c.lastrowid
+        
+        # Auto-assign creator to the workspace
+        c.execute("INSERT INTO workspace_users (workspace_id, user_email) VALUES (%s, %s)", (workspace_id, user_email))
+        company_db.commit()
         
         c.close()
         company_db.close()

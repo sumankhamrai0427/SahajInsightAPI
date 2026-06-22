@@ -35,7 +35,11 @@ def get_file_status_controller():
         # If not, fallback to created_by + session_id
         fmt_time = '%H:%i:%s'
         fmt_date = '%d-%m-%Y'
-        if workspace_id:
+        if workspace_id == "all":
+            uf_where = "1=1"
+            nk_where = "1=1"
+            query_params = (fmt_time, fmt_date, fmt_time, fmt_date)
+        elif workspace_id:
             uf_where = "uf.workspace_id = %s"
             nk_where = "nk.workspace_id = %s"
             query_params = (fmt_time, fmt_date, workspace_id, fmt_time, fmt_date, workspace_id)
@@ -47,6 +51,8 @@ def get_file_status_controller():
         sql = f"""
         SELECT * FROM (
             SELECT 
+                COALESCE(w.workspace_name, 'N/A') AS workspace_name,
+                uf.workspace_id,
                 uf.id AS file_id,
                 uf.file_name,
                 uf.table_name,
@@ -67,11 +73,14 @@ def get_file_status_controller():
                 DATE_FORMAT(uf.created_at, %s) AS created_date,
                 COALESCE(uf.updated_at, uf.created_at) AS updated_at
             FROM uploaded_files uf
+            LEFT JOIN workspaces w ON uf.workspace_id = w.id
             WHERE {uf_where}
             
             UNION ALL
             
             SELECT 
+                COALESCE(MAX(w.workspace_name), 'N/A') AS workspace_name,
+                MAX(nk.workspace_id) AS workspace_id,
                 MAX(nk.id) + 100000 AS file_id,
                 nk.source_name AS file_name,
                 'Web Search Data' AS table_name,
@@ -92,6 +101,7 @@ def get_file_status_controller():
                 DATE_FORMAT(MAX(nk.created_at), %s) AS created_date,
                 MAX(nk.created_at) AS updated_at
             FROM normalized_knowledge nk
+            LEFT JOIN workspaces w ON nk.workspace_id = w.id
             WHERE nk.source_type = 'web_search' AND {nk_where}
               AND NOT EXISTS (
                   SELECT 1 FROM uploaded_files uf2 

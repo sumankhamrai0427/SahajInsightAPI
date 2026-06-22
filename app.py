@@ -35,6 +35,8 @@ from controller.company_get_users import get_company_users_controller
 from controller.contact_handel import handle_contact_controller
 from controller.llm_web_search import llm_web_search_controller
 from controller.summarize_sources import summarize_sources_controller
+from controller.update_uploaded_file import update_uploaded_file_controller
+
 
 
 from controller.seo_api import create_seo_entry_controller,update_seo_entry_controller,delete_seo_entry_controller,get_seo_data_controller,get_seo_by_path_controller
@@ -193,6 +195,11 @@ def get_saved_query_response_route():
 @app.route("/delete_uploaded_file", methods=["POST"])
 def delete_uploaded_file_route():
     return delete_uploaded_file_controller()
+
+
+@app.route("/update_uploaded_file", methods=["POST"])
+def update_uploaded_file_route():
+    return update_uploaded_file_controller()
 
 
 @app.route("/report_save", methods=["POST"])

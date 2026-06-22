@@ -161,6 +161,7 @@ def chat_endpoint_controller():
                 SELECT table_name 
                 FROM uploaded_files  
                 WHERE workspace_id=%s
+                  AND file_type != 'web_search'
                   AND table_extraction_status='done'
                   AND column_extraction_status='done'
             """, (workspace_id,))
@@ -170,6 +171,7 @@ def chat_endpoint_controller():
                 FROM uploaded_files  
                 WHERE session_id=%s
                   AND created_by=%s
+                  AND file_type != 'web_search'
                   AND table_extraction_status='done'
                   AND column_extraction_status='done'
             """, (session_id, created_by))
