@@ -41,6 +41,7 @@ from controller.seo_api import create_seo_entry_controller,update_seo_entry_cont
 from controller.rag_controller import (
     rag_ingest_web_search_controller,
     rag_ingest_csv_controller,
+    rag_ingest_selected_controller,
     rag_chat_controller
 )
 from controller.workspace_controller import (
@@ -129,6 +130,10 @@ def rag_ingest_web_search_route():
 @app.route("/rag/ingest/csv", methods=["POST"])
 def rag_ingest_csv_route():
     return rag_ingest_csv_controller()
+
+@app.route("/rag/ingest/selected", methods=["POST"])
+def rag_ingest_selected_route():
+    return rag_ingest_selected_controller()
 
 @app.route("/rag/chat", methods=["POST"])
 def rag_chat_route():

@@ -16,11 +16,13 @@ def rag_ingest_web_search_controller():
         company_code = data.get("company_code")
         session_id = data.get("session_id")
         query = data.get("query")
+        workspace_id = data.get("workspace_id")
+        created_by = data.get("created_by")
         
         if not all([company_code, session_id, query]):
             return build_response(False, "Missing required fields", 400)
             
-        success, message = ingest_web_search(company_code, session_id, query)
+        success, message = ingest_web_search(company_code, session_id, query, workspace_id=workspace_id, created_by=created_by)
         
         if success:
             return build_response(True, message, 200)
@@ -195,3 +197,57 @@ def get_rag_chat_history_controller():
         return build_response(True, "RAG chat history fetched", 200, {"history": history})
     except Exception as e:
         return build_response(False, f"Get RAG Chat History Error: {str(e)}", 500)
+
+from flask import g
+import os
+from helper.helperFunctions import get_upload_folder
+
+def rag_ingest_selected_controller():
+    """
+    POST /rag/ingest/selected
+    Body: {"csv_files": [...], "web_searches": [...], "session_id": "...", "workspace_id": "...", "created_by": "..."}
+    """
+    try:
+        data = request.get_json() or {}
+        session_id = data.get("session_id")
+        workspace_id = data.get("workspace_id")
+        created_by = data.get("created_by")
+        csv_files = data.get("csv_files", [])
+        web_searches = data.get("web_searches", [])
+
+        if not session_id or not created_by:
+            return build_response(False, "Missing session_id or created_by", 400)
+
+        if not hasattr(g, "company_db"):
+            return build_response(False, "Invalid session", 401)
+
+        company_db = g.company_db
+        company_code = company_db.database
+
+        from helper.rag_ingestion import ingest_uploaded_csv, process_and_store_text
+
+        # 1. Process CSVs
+        upload_folder = get_upload_folder()
+        for fname in csv_files:
+            file_path = os.path.join(upload_folder, fname)
+            if os.path.exists(file_path):
+                # Pass ingest_to_vector_graph=True
+                ingest_uploaded_csv(company_code, session_id, file_path, workspace_id, ingest_to_vector_graph=True)
+
+        # 2. Process Web Searches
+        # To avoid duplicated live search, we read the content from normalized_knowledge
+        # and then push to VectorDB/GraphDB via process_and_store_text.
+        cursor = company_db.cursor(dictionary=True)
+        for sname in web_searches:
+            cursor.execute("SELECT content FROM normalized_knowledge WHERE source_type = 'web_search' AND source_name = %s", (sname,))
+            rows = cursor.fetchall()
+            if rows:
+                # Combine chunks back to a single text to process, or process them as a single block
+                combined_text = "\n".join([r["content"] for r in rows if r["content"]])
+                if combined_text:
+                    process_and_store_text(company_code, session_id, combined_text, sname, workspace_id, ingest_to_vector_graph=True)
+        cursor.close()
+
+        return build_response(True, "Selected sources ingested for RAG successfully.", 200)
+    except Exception as e:
+        return build_response(False, f"Ingest Selected Error: {str(e)}", 500)

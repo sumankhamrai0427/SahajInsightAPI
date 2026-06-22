@@ -39,7 +39,7 @@ Provide a clean, informative, and detailed response based on the latest context.
                 from helper.rag_ingestion import ingest_web_search
                 def background_ingest():
                     try:
-                        ingest_web_search(company_code, session_id, user_query, ai_response, workspace_id)
+                        ingest_web_search(company_code, session_id, user_query, ai_response, workspace_id, created_by=created_by)
                     except Exception as e:
                         print("Background Web Search Ingest Error:", e)
                 threading.Thread(target=background_ingest).start()

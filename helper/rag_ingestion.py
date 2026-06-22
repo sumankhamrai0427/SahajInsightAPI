@@ -56,9 +56,9 @@ def extract_entities_with_llm(text_chunk: str):
         print(f"[LLM Extraction Error] {e}")
         return [], []
 
-def process_and_store_data(company_code: str, session_id: str, df: pd.DataFrame, source_name: str, workspace_id: str = None):
+def process_and_store_data(company_code: str, session_id: str, df: pd.DataFrame, source_name: str, workspace_id: str = None, ingest_to_vector_graph: bool = False):
     """
-    Core pipeline that pushes dataframe content to ChromaDB and ArangoDB.
+    Core pipeline that pushes dataframe content to ChromaDB and ArangoDB (conditionally) and MySQL.
     """
     if df.empty:
         return False, "Dataframe is empty"
@@ -85,12 +85,14 @@ def process_and_store_data(company_code: str, session_id: str, df: pd.DataFrame,
         for i, chunk in enumerate(chunks):
             chunk_id = hashlib.md5(f"{session_id}_{source_name}_{idx}_{i}".encode()).hexdigest()
             all_chunks.append(chunk)
-            metadatas.append({
+            meta = {
                 "source": source_name,
                 "session_id": session_id,
-                "workspace_id": workspace_id,
                 "row_index": idx
-            })
+            }
+            if workspace_id is not None:
+                meta["workspace_id"] = str(workspace_id)
+            metadatas.append(meta)
             ids.append(chunk_id)
             
             # Extract graph data ONLY for web search (too slow/expensive for full CSVs)
@@ -102,16 +104,17 @@ def process_and_store_data(company_code: str, session_id: str, df: pd.DataFrame,
                 all_edges.extend(edges)
 
     # 1. Store in ChromaDB
-    try:
-        add_chunks_to_chroma(company_code, all_chunks, metadatas, ids)
-    except Exception as e:
-        return False, f"ChromaDB Error: {e}"
+    if ingest_to_vector_graph:
+        try:
+            add_chunks_to_chroma(company_code, all_chunks, metadatas, ids)
+        except Exception as e:
+            return False, f"ChromaDB Error: {e}"
 
-    # 2. Store in ArangoDB
-    try:
-        add_graph_data(company_code, all_nodes, all_edges)
-    except Exception as e:
-        print(f"ArangoDB Error: {e}")
+        # 2. Store in ArangoDB
+        try:
+            add_graph_data(company_code, all_nodes, all_edges)
+        except Exception as e:
+            print(f"ArangoDB Error: {e}")
 
     # 3. Store in normalized_knowledge (MySQL)
     try:
@@ -151,7 +154,7 @@ def process_and_store_data(company_code: str, session_id: str, df: pd.DataFrame,
 
     return True, f"Stored {len(all_chunks)} chunks in Vector DB, Graph DB, and MySQL."
 
-def process_and_store_text(company_code: str, session_id: str, text: str, source_name: str, workspace_id: str = None):
+def process_and_store_text(company_code: str, session_id: str, text: str, source_name: str, workspace_id: str = None, ingest_to_vector_graph: bool = False, created_by: str = None):
     """
     Direct pipeline for unstructured text (like web search responses) to avoid CSV conversion failures.
     """
@@ -167,12 +170,14 @@ def process_and_store_text(company_code: str, session_id: str, text: str, source
     
     for i, chunk in enumerate(all_chunks):
         chunk_id = hashlib.md5(f"{session_id}_{source_name}_{i}".encode()).hexdigest()
-        metadatas.append({
+        meta = {
             "source": source_name,
             "session_id": session_id,
-            "workspace_id": workspace_id,
             "chunk_index": i
-        })
+        }
+        if workspace_id is not None:
+            meta["workspace_id"] = str(workspace_id)
+        metadatas.append(meta)
         ids.append(chunk_id)
         
         # Extract graph data for web search
@@ -183,17 +188,18 @@ def process_and_store_text(company_code: str, session_id: str, text: str, source
         all_edges.extend(edges)
 
     # 1. Store in ChromaDB
-    try:
-        add_chunks_to_chroma(company_code, all_chunks, metadatas, ids)
-    except Exception as e:
-        return False, f"ChromaDB Error: {e}"
+    if ingest_to_vector_graph:
+        try:
+            add_chunks_to_chroma(company_code, all_chunks, metadatas, ids)
+        except Exception as e:
+            return False, f"ChromaDB Error: {e}"
 
-    # 2. Store in ArangoDB
-    try:
-        if all_nodes or all_edges:
-            add_graph_data(company_code, all_nodes, all_edges)
-    except Exception as e:
-        print(f"ArangoDB Error: {e}")
+        # 2. Store in ArangoDB
+        try:
+            if all_nodes or all_edges:
+                add_graph_data(company_code, all_nodes, all_edges)
+        except Exception as e:
+            print(f"ArangoDB Error: {e}")
 
     # 3. Store in normalized_knowledge (MySQL)
     try:
@@ -225,6 +231,37 @@ def process_and_store_text(company_code: str, session_id: str, text: str, source
                 
             cursor.executemany(insert_sql, mysql_data)
             db.commit()
+
+            # Insert into uploaded_files
+            try:
+                uf_sql = """
+                    INSERT INTO uploaded_files 
+                    (session_id, created_by, workspace_id, file_name, table_name, file_size_mb, file_type, 
+                     total_columns, last_inserted_rows, table_extraction_status, column_extraction_status, 
+                     data_insights_status, data_insert_status, insights)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """
+                uf_values = (
+                    session_id,
+                    created_by or 'system',
+                    safe_workspace_id,
+                    source_name,
+                    'Web Search Data',
+                    '0 MB',
+                    'web_search',
+                    0,
+                    len(all_chunks),
+                    'done',
+                    'done',
+                    'done',
+                    'done',
+                    '[]'
+                )
+                cursor.execute(uf_sql, uf_values)
+                db.commit()
+            except Exception as e_uf:
+                print(f"MySQL Uploaded Files Error for web search: {e_uf}")
+
             cursor.close()
             db.close()
     except Exception as e:
@@ -232,7 +269,7 @@ def process_and_store_text(company_code: str, session_id: str, text: str, source
 
     return True, f"Stored {len(all_chunks)} text chunks."
 
-def ingest_web_search(company_code: str, session_id: str, query: str, ai_response: str = None, workspace_id: str = None):
+def ingest_web_search(company_code: str, session_id: str, query: str, ai_response: str = None, workspace_id: str = None, ingest_to_vector_graph: bool = False, created_by: str = None):
     """
     Pipeline for live web search data.
     """
@@ -246,9 +283,9 @@ def ingest_web_search(company_code: str, session_id: str, query: str, ai_respons
         
     # Bypass CSV entirely
     source_name = f"web_search_{query.replace(' ', '_')[:20]}"
-    return process_and_store_text(company_code, session_id, live_data, source_name, workspace_id)
+    return process_and_store_text(company_code, session_id, live_data, source_name, workspace_id, ingest_to_vector_graph=ingest_to_vector_graph, created_by=created_by)
     
-def ingest_uploaded_csv(company_code: str, session_id: str, file_path: str, workspace_id: str = None):
+def ingest_uploaded_csv(company_code: str, session_id: str, file_path: str, workspace_id: str = None, ingest_to_vector_graph: bool = False):
     """
     Pipeline for user uploaded CSV.
     """
@@ -256,6 +293,6 @@ def ingest_uploaded_csv(company_code: str, session_id: str, file_path: str, work
         df = pd.read_csv(file_path)
         import os
         filename = os.path.basename(file_path)
-        return process_and_store_data(company_code, session_id, df, filename, workspace_id)
+        return process_and_store_data(company_code, session_id, df, filename, workspace_id, ingest_to_vector_graph=ingest_to_vector_graph)
     except Exception as e:
         return False, f"CSV Processing Error: {e}"

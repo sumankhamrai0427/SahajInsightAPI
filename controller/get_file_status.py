@@ -93,6 +93,10 @@ def get_file_status_controller():
                 MAX(nk.created_at) AS updated_at
             FROM normalized_knowledge nk
             WHERE nk.source_type = 'web_search' AND {nk_where}
+              AND NOT EXISTS (
+                  SELECT 1 FROM uploaded_files uf2 
+                  WHERE uf2.file_name = nk.source_name AND uf2.file_type = 'web_search'
+              )
             GROUP BY nk.source_name
         ) AS combined_results
         ORDER BY updated_at DESC
