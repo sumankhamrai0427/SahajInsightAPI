@@ -187,6 +187,9 @@ def chat_endpoint_controller():
         schema_context = {}
 
         for tname in table_names:
+            if tname == "Web Search Data":
+                continue
+                
             cursor.execute(f"SELECT * FROM `{tname}`")
             rows = cursor.fetchall()
 
