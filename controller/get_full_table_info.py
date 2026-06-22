@@ -40,6 +40,15 @@ def get_full_table_info_controller():
         # ----------------------
         table_list = results[0].fetchall()  # [{label,value}, ...]
 
+        workspace_id = body.get("workspace_id")
+        if workspace_id and str(workspace_id).lower() not in ("null", "undefined", ""):
+            cursor.execute(
+                "SELECT table_name FROM uploaded_files WHERE workspace_id = %s AND table_extraction_status = 'done'",
+                (workspace_id,)
+            )
+            allowed_tables = {row["table_name"] for row in cursor.fetchall()}
+            table_list = [t for t in table_list if t["value"] in allowed_tables]
+
         # ----------------------
         # COLUMN METADATA
         # ----------------------

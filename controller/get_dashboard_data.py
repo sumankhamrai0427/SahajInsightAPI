@@ -55,7 +55,8 @@ def get_dashboard_data_controller():
         # -----------------------------
         def safe_get(rs_list, key, default=0):
             if rs_list and len(rs_list) > 0:
-                return rs_list[0].get(key, default)
+                val = rs_list[0].get(key, default)
+                return default if val is None else val
             return default
 
         # -----------------------------
