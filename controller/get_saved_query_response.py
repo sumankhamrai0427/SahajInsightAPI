@@ -11,6 +11,8 @@ def get_saved_query_response_controller():
         if not created_by or not session_id:
             return build_response(False, "created_by & session_id required", 400)
 
+        workspace_id = body.get("workspace_id")
+
         if not hasattr(g, "company_db"):
             return build_response(False, "Invalid session", 401)
 
@@ -19,7 +21,7 @@ def get_saved_query_response_controller():
 
         cursor.callproc(
             "sp_get_query_details_by_user_session_id",
-            (created_by, session_id)
+            (created_by, session_id, workspace_id)
         )
 
         rows = []
