@@ -1,4 +1,5 @@
 import pandas as pd
+# pyrefly: ignore [missing-import]
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from database.vector_db import add_chunks_to_chroma
 from database.graph_db import add_graph_data
@@ -317,3 +318,241 @@ def ingest_uploaded_csv(company_code: str, session_id: str, file_path: str, work
         return process_and_store_data(company_code, session_id, df, filename, workspace_id, ingest_to_vector_graph=ingest_to_vector_graph)
     except Exception as e:
         return False, f"CSV Processing Error: {e}"
+
+def save_graph_visualization(source_name: str, nodes: list, edges: list):
+    """
+    Saves a beautiful, interactive, self-contained force-directed graph visualization inside API/Graph/ folder.
+    This runs 100% offline with vis-network.min.js inlined to avoid browser CORS/file-protocol blocking.
+    """
+    if not nodes and not edges:
+        return
+        
+    try:
+        import os
+        # Create Graph folder if it doesn't exist
+        graph_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "Graph")
+        os.makedirs(graph_dir, exist_ok=True)
+        
+        # Safe filename
+        safe_source_name = re.sub(r'[^a-zA-Z0-9_.-]', '_', source_name)
+        file_path = os.path.join(graph_dir, f"{safe_source_name}.html")
+        
+        # Color mapping by node type
+        colors_by_type = {
+            "product": "#ff7b72",
+            "category": "#79c0ff",
+            "company": "#7ee787",
+            "user": "#d2a8ff",
+            "location": "#ffa657",
+            "entity": "#58a6ff"
+        }
+        
+        # Formatted nodes for visualization
+        formatted_nodes = []
+        for n in nodes:
+            key = n.get("_key", "")
+            if not key:
+                continue
+            ntype = n.get("type", "Entity")
+            color = colors_by_type.get(ntype.lower(), "#58a6ff")
+            formatted_nodes.append({
+                "id": key,
+                "label": n.get("name", key),
+                "type": ntype,
+                "color": color
+            })
+            
+        # Formatted edges for visualization
+        formatted_edges = []
+        for e in edges:
+            frm = e.get("_from", "").split("/")[-1]
+            to = e.get("_to", "").split("/")[-1]
+            if not frm or not to:
+                continue
+            formatted_edges.append({
+                "from": frm,
+                "to": to,
+                "label": e.get("type", "RELATED_TO")
+            })
+
+        # Load local vis-network.min.js content
+        vis_js_path = os.path.join(graph_dir, "vis-network.min.js")
+        vis_js_content = ""
+        if os.path.exists(vis_js_path):
+            with open(vis_js_path, "r", encoding="utf-8") as f_js:
+                vis_js_content = f_js.read()
+        else:
+            # Fallback text if not downloaded locally
+            vis_js_content = "/* vis-network.min.js not found locally. Please fetch it. */"
+            
+        html_template = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Graph Visualization - {source_name}</title>
+  <style type="text/css">
+    body {
+      background-color: #ffffff;
+      color: #333333;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+    }
+    #header {
+      padding: 15px 20px;
+      background-color: rgba(246, 248, 250, 0.9);
+      border-bottom: 1px solid #d0d7de;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 10;
+    }
+    #header h1 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+      color: #24292f;
+    }
+    #header .stats {
+      font-size: 12px;
+      color: #57606a;
+    }
+    #network {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+    .badge {
+      background-color: #0969da;
+      color: #ffffff;
+      padding: 3px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      margin-left: 5px;
+      font-weight: 600;
+    }
+  </style>
+  <script type="text/javascript">
+    {vis_js_content}
+  </script>
+</head>
+<body>
+  <div id="header">
+    <h1>Graph Visualization: <span style="color: #0969da;">{source_name}</span></h1>
+    <div class="stats">
+      Entities: <span class="badge">{nodes_count}</span>
+      Relationships: <span class="badge">{edges_count}</span>
+    </div>
+  </div>
+  <div id="network"></div>
+
+  <script type="text/javascript">
+    var rawNodes = {raw_nodes};
+    var rawEdges = {raw_edges};
+
+    var nodes = new vis.DataSet(rawNodes.map(function(n) {
+      var isCentral = n.type.toLowerCase() === 'transaction' || n.type.toLowerCase() === 'session';
+      return {
+        id: n.id,
+        label: n.label,
+        shape: 'dot',
+        size: isCentral ? 24 : 16,
+        color: {
+          background: '#97c2fc',
+          border: '#2b7ce9',
+          highlight: {
+            background: '#d2e5ff',
+            border: '#2b7ce9'
+          }
+        },
+        font: {
+          size: 12,
+          color: '#333333',
+          face: 'sans-serif'
+        },
+        borderWidth: 1.5
+      };
+    }));
+
+    var edges = new vis.DataSet(rawEdges.map(function(e) {
+      return {
+        from: e.from,
+        to: e.to,
+        label: e.label,
+        arrows: {
+          to: { enabled: true, scaleFactor: 0.6 }
+        },
+        color: {
+          color: '#2b7ce9',
+          highlight: '#2b7ce9',
+          hover: '#2b7ce9'
+        },
+        font: {
+          size: 10,
+          color: '#333333',
+          align: 'middle'
+        },
+        smooth: {
+          type: 'continuous'
+        }
+      };
+    }));
+
+    var container = document.getElementById('network');
+    var data = {
+      nodes: nodes,
+      edges: edges
+    };
+    
+    var options = {
+      physics: {
+        stabilization: {
+          enabled: true,
+          iterations: 150
+        },
+        barnesHut: {
+          gravitationalConstant: -2000,
+          centralGravity: 0.3,
+          springLength: 95,
+          springConstant: 0.04,
+          damping: 0.09
+        }
+      },
+      interaction: {
+        hover: true,
+        tooltipDelay: 200,
+        navigationButtons: true,
+        keyboard: true
+      }
+    };
+    
+    var network = new vis.Network(container, data, options);
+  </script>
+</body>
+</html>
+"""
+        
+        # Perform string replacements
+        html_content = html_template.replace("{source_name}", source_name)
+        html_content = html_content.replace("{nodes_count}", str(len(formatted_nodes)))
+        html_content = html_content.replace("{edges_count}", str(len(formatted_edges)))
+        html_content = html_content.replace("{raw_nodes}", json.dumps(formatted_nodes))
+        html_content = html_content.replace("{raw_edges}", json.dumps(formatted_edges))
+        html_content = html_content.replace("{vis_js_content}", vis_js_content)
+        
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(html_content)
+            
+        print(f"[Graph Visualization] Saved inlined HTML to {file_path}")
+    except Exception as e:
+        print(f"[Graph Visualization Error] {e}")
+
