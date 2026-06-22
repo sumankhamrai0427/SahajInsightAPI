@@ -149,20 +149,30 @@ def chat_endpoint_controller():
             return build_response(False, "Invalid session", 401)
 
         created_by = g.created_by   #  THIS IS IMPORTANT
+        workspace_id = data.get("workspace_id")
         # ======================================================
         # STEP 1 — Fetch table names from uploaded_files
         # ======================================================
         conn = g.company_db
         cursor = conn.cursor(dictionary=True)
 
-        cursor.execute("""
-            SELECT table_name 
-            FROM uploaded_files  
-            WHERE session_id=%s
-              AND created_by=%s
-              AND table_extraction_status='done'
-              AND column_extraction_status='done'
-        """, (session_id, created_by))
+        if workspace_id and str(workspace_id).lower() not in ("null", "undefined", ""):
+            cursor.execute("""
+                SELECT table_name 
+                FROM uploaded_files  
+                WHERE workspace_id=%s
+                  AND table_extraction_status='done'
+                  AND column_extraction_status='done'
+            """, (workspace_id,))
+        else:
+            cursor.execute("""
+                SELECT table_name 
+                FROM uploaded_files  
+                WHERE session_id=%s
+                  AND created_by=%s
+                  AND table_extraction_status='done'
+                  AND column_extraction_status='done'
+            """, (session_id, created_by))
 
         table_rows = cursor.fetchall()
 
