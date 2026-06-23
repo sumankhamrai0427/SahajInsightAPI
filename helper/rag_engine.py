@@ -117,6 +117,22 @@ def process_rag_chat(company_code: str, session_id: str, user_query: str, worksp
         # 4. Get LLM Answer
         ai_answer = call_llm(prompt)
         
+        # Prepend source URLs to the RAG Chat response if found in context
+        import re
+        all_context = "\n".join(vector_context) + "\n" + db_text
+        sources = re.findall(r'---\s+Source:\s*(https?://\S+)', all_context)
+        # Also parse old format "Source: https://..." if any
+        old_sources = re.findall(r'(?:^|\n)Source:\s*(https?://\S+)', all_context)
+        sources.extend(old_sources)
+        
+        if sources:
+            unique_sources = []
+            for s in sources:
+                if s not in unique_sources:
+                    unique_sources.append(s)
+            source_header = "Sources:\n" + "\n".join(f"- {s}" for s in unique_sources) + "\n\n---\n\n"
+            ai_answer = source_header + ai_answer
+        
         # 5. Build final response
         return build_response(True, "RAG Chat Successful", 200, {
             "ai_answer": ai_answer,
