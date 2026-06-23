@@ -71,6 +71,9 @@ def process_and_store_data(company_code: str, session_id: str, df: pd.DataFrame,
     all_nodes = []
     all_edges = []
     
+    extracted_chunks_count = 0
+    MAX_CSV_GRAPH_CHUNKS = 15
+    
     # Process each row into a text chunk
     for idx, row in df.iterrows():
         row_dict = row.dropna().to_dict()
@@ -96,13 +99,59 @@ def process_and_store_data(company_code: str, session_id: str, df: pd.DataFrame,
             metadatas.append(meta)
             ids.append(chunk_id)
             
-            # Extract graph data ONLY for web search (too slow/expensive for full CSVs)
+            # Extract graph data:
+            # - For web_search: extract all chunks
+            # - For CSVs: extract up to the first 15 chunks to limit LLM cost
+            should_extract = False
             if "web_search" in source_name:
+                should_extract = True
+            elif extracted_chunks_count < MAX_CSV_GRAPH_CHUNKS:
+                should_extract = True
+                
+            if should_extract:
                 nodes, edges = extract_entities_with_llm(chunk)
-                for n in nodes: n["workspace_id"] = workspace_id
-                for e in edges: e["workspace_id"] = workspace_id
-                all_nodes.extend(nodes)
-                all_edges.extend(edges)
+                if nodes or edges:
+                    if "web_search" not in source_name:
+                        extracted_chunks_count += 1
+                    
+                    # Normalize keys to connect identical entities and prevent duplicates
+                    key_map = {}
+                    normalized_nodes = []
+                    for n in nodes:
+                        old_key = n.get("_key")
+                        name = n.get("name", "")
+                        ntype = n.get("type", "Entity")
+                        if not old_key or not name:
+                            continue
+                        
+                        # Generate a clean, deterministic unique key based on type and name
+                        safe_name = re.sub(r'[^a-z0-9_]', '_', name.lower().strip())
+                        safe_type = re.sub(r'[^a-z0-9_]', '_', ntype.lower().strip())
+                        new_key = f"{safe_type}_{safe_name}"
+                        
+                        n["_key"] = new_key
+                        n["workspace_id"] = workspace_id
+                        key_map[old_key] = new_key
+                        normalized_nodes.append(n)
+                        
+                    normalized_edges = []
+                    for e in edges:
+                        frm = e.get("_from")
+                        to = e.get("_to")
+                        if not frm or not to:
+                            continue
+                        
+                        # Map temporary LLM keys to our unique normalized keys
+                        new_frm = key_map.get(frm, frm)
+                        new_to = key_map.get(to, to)
+                        
+                        e["_from"] = new_frm
+                        e["_to"] = new_to
+                        e["workspace_id"] = workspace_id
+                        normalized_edges.append(e)
+                        
+                    all_nodes.extend(normalized_nodes)
+                    all_edges.extend(normalized_edges)
 
     # 1. Store in ChromaDB
     if ingest_to_vector_graph:
@@ -116,6 +165,13 @@ def process_and_store_data(company_code: str, session_id: str, df: pd.DataFrame,
             add_graph_data(company_code, all_nodes, all_edges)
         except Exception as e:
             print(f"ArangoDB Error: {e}")
+            
+        # Save HTML graph visualization locally
+        try:
+            if all_nodes or all_edges:
+                save_graph_visualization(source_name, all_nodes, all_edges)
+        except Exception as e:
+            print(f"Graph Visual Save Error: {e}")
 
     # 3. Store in normalized_knowledge (MySQL)
     db = None
@@ -199,10 +255,42 @@ def process_and_store_text(company_code: str, session_id: str, text: str, source
         
         # Extract graph data for web search
         nodes, edges = extract_entities_with_llm(chunk)
-        for n in nodes: n["workspace_id"] = workspace_id
-        for e in edges: e["workspace_id"] = workspace_id
-        all_nodes.extend(nodes)
-        all_edges.extend(edges)
+        if nodes or edges:
+            key_map = {}
+            normalized_nodes = []
+            for n in nodes:
+                old_key = n.get("_key")
+                name = n.get("name", "")
+                ntype = n.get("type", "Entity")
+                if not old_key or not name:
+                    continue
+                
+                safe_name = re.sub(r'[^a-z0-9_]', '_', name.lower().strip())
+                safe_type = re.sub(r'[^a-z0-9_]', '_', ntype.lower().strip())
+                new_key = f"{safe_type}_{safe_name}"
+                
+                n["_key"] = new_key
+                n["workspace_id"] = workspace_id
+                key_map[old_key] = new_key
+                normalized_nodes.append(n)
+                
+            normalized_edges = []
+            for e in edges:
+                frm = e.get("_from")
+                to = e.get("_to")
+                if not frm or not to:
+                    continue
+                
+                new_frm = key_map.get(frm, frm)
+                new_to = key_map.get(to, to)
+                
+                e["_from"] = new_frm
+                e["_to"] = new_to
+                e["workspace_id"] = workspace_id
+                normalized_edges.append(e)
+                
+            all_nodes.extend(normalized_nodes)
+            all_edges.extend(normalized_edges)
 
     # 1. Store in ChromaDB
     if ingest_to_vector_graph:
@@ -217,6 +305,13 @@ def process_and_store_text(company_code: str, session_id: str, text: str, source
                 add_graph_data(company_code, all_nodes, all_edges)
         except Exception as e:
             print(f"ArangoDB Error: {e}")
+            
+        # Save HTML graph visualization locally
+        try:
+            if all_nodes or all_edges:
+                save_graph_visualization(source_name, all_nodes, all_edges)
+        except Exception as e:
+            print(f"Graph Visual Save Error: {e}")
 
     # 3. Store in normalized_knowledge (MySQL)
     db = None
@@ -344,22 +439,54 @@ def save_graph_visualization(source_name: str, nodes: list, edges: list):
         safe_source_name = re.sub(r'[^a-zA-Z0-9_.-]', '_', source_name)
         file_path = os.path.join(graph_dir, f"{safe_source_name}.html")
         
-        # Color mapping by node type
+        # Deduplicate nodes by _key
+        unique_nodes = {}
+        for n in nodes:
+            key = n.get("_key")
+            if key and key not in unique_nodes:
+                unique_nodes[key] = n
+                
+        # Deduplicate edges by _from + _to + type
+        unique_edges = {}
+        for e in edges:
+            frm = e.get("_from", "")
+            to = e.get("_to", "")
+            etype = e.get("type", "RELATED_TO")
+            # ArangoDB style might contain nodes_xyz/ prefix, normalize it for local vis.js matching
+            frm_clean = frm.split("/")[-1]
+            to_clean = to.split("/")[-1]
+            edge_key = f"{frm_clean}_{etype}_{to_clean}"
+            if edge_key not in unique_edges:
+                unique_edges[edge_key] = {
+                    "from": frm_clean,
+                    "to": to_clean,
+                    "type": etype
+                }
+        
+        # Color mapping by node type to support various entity types in business datasets
         colors_by_type = {
             "product": "#ff7b72",
             "category": "#79c0ff",
             "company": "#7ee787",
             "user": "#d2a8ff",
             "location": "#ffa657",
-            "entity": "#58a6ff"
+            "entity": "#58a6ff",
+            "date": "#ffc857",
+            "salesperson": "#ff9f1c",
+            "customer": "#2ec4b6",
+            "car": "#e71d36",
+            "carmodel": "#ff6b6b",
+            "cartype": "#a9def9",
+            "color": "#e6adec",
+            "price": "#ff99c8",
+            "paymentmethod": "#fcf6bd",
+            "region": "#d0f4de",
+            "year": "#ffac81"
         }
         
         # Formatted nodes for visualization
         formatted_nodes = []
-        for n in nodes:
-            key = n.get("_key", "")
-            if not key:
-                continue
+        for key, n in unique_nodes.items():
             ntype = n.get("type", "Entity")
             color = colors_by_type.get(ntype.lower(), "#58a6ff")
             formatted_nodes.append({
@@ -371,26 +498,12 @@ def save_graph_visualization(source_name: str, nodes: list, edges: list):
             
         # Formatted edges for visualization
         formatted_edges = []
-        for e in edges:
-            frm = e.get("_from", "").split("/")[-1]
-            to = e.get("_to", "").split("/")[-1]
-            if not frm or not to:
-                continue
+        for e in unique_edges.values():
             formatted_edges.append({
-                "from": frm,
-                "to": to,
-                "label": e.get("type", "RELATED_TO")
+                "from": e["from"],
+                "to": e["to"],
+                "label": e["type"]
             })
-
-        # Load local vis-network.min.js content
-        vis_js_path = os.path.join(graph_dir, "vis-network.min.js")
-        vis_js_content = ""
-        if os.path.exists(vis_js_path):
-            with open(vis_js_path, "r", encoding="utf-8") as f_js:
-                vis_js_content = f_js.read()
-        else:
-            # Fallback text if not downloaded locally
-            vis_js_content = "/* vis-network.min.js not found locally. Please fetch it. */"
             
         html_template = """<!DOCTYPE html>
 <html lang="en">
@@ -448,9 +561,7 @@ def save_graph_visualization(source_name: str, nodes: list, edges: list):
       font-weight: 600;
     }
   </style>
-  <script type="text/javascript">
-    {vis_js_content}
-  </script>
+  <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
 </head>
 <body>
   <div id="header">
@@ -474,7 +585,7 @@ def save_graph_visualization(source_name: str, nodes: list, edges: list):
         shape: 'dot',
         size: isCentral ? 24 : 16,
         color: {
-          background: '#97c2fc',
+          background: n.color || '#97c2fc',
           border: '#2b7ce9',
           highlight: {
             background: '#d2e5ff',
@@ -554,7 +665,6 @@ def save_graph_visualization(source_name: str, nodes: list, edges: list):
         html_content = html_content.replace("{edges_count}", str(len(formatted_edges)))
         html_content = html_content.replace("{raw_nodes}", json.dumps(formatted_nodes))
         html_content = html_content.replace("{raw_edges}", json.dumps(formatted_edges))
-        html_content = html_content.replace("{vis_js_content}", vis_js_content)
         
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(html_content)
