@@ -295,13 +295,36 @@ ABSOLUTE SECURITY RULES:
             )
 
         # ======================================================
-        # STEP 5 — Response
+        # STEP 5 — Execute SQL and Generate Conversational Answer
         # ======================================================
+        success, results, msg = run_select_query(select_query)
+        chat_answer = "Sorry, I couldn't execute the query to find the answer."
+        
+        if success:
+            row_data = results.get("rows", [])
+            # Ask LLM to generate conversational answer based on data
+            ans_prompt = f"""
+            User asked: "{user_query}"
+            The database query returned the following data:
+            {row_data}
+            
+            Provide a short, direct, and conversational answer to the user's question based ONLY on this data. Do not mention the query or database.
+            """
+            chat_answer = call_llm(ans_prompt).strip()
+            
+            # Also generate visualization insights if needed
+            table_name = g.get("last_used_table")
+            visualization = build_insights(table_name, results.get("columns", []))
+            results["visualization"] = visualization
+
         return build_response(True, "Chat processed", 200, {
             "session_id": session_id,
             "tables": table_names,
             "schema_context": schema_context,
-            "ai_response": ai_sql
+            "ai_response": chat_answer,
+            "sql_script": ai_sql,
+            "results": results if success else None,
+            "logs": [msg]
         })
 
     except Exception as e:

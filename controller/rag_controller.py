@@ -21,8 +21,7 @@ def rag_ingest_web_search_controller():
         
         if not all([company_code, session_id, query]):
             return build_response(False, "Missing required fields", 400)
-            
-        success, message = ingest_web_search(company_code, session_id, query, workspace_id=workspace_id, created_by=created_by)
+        success, message = ingest_web_search(company_code, session_id, query, workspace_id=workspace_id, ingest_to_vector_graph=True, created_by=created_by)
         
         if success:
             return build_response(True, message, 200)

@@ -72,6 +72,33 @@ CORS(app)
 def before_request():
     return attach_company_db()
 
+@app.teardown_appcontext
+def teardown_db_connections(exception=None):
+    master = g.pop('master_db', None)
+    if master:
+        try:
+            if master.is_connected():
+                master.close()
+        except Exception:
+            pass
+            
+    company = g.pop('company_db', None)
+    if company:
+        try:
+            if company.is_connected():
+                company.close()
+        except Exception:
+            pass
+            
+    company_dbs = g.pop('company_dbs', {})
+    for db in company_dbs.values():
+        if db:
+            try:
+                if db.is_connected():
+                    db.close()
+            except Exception:
+                pass
+
 
 @app.teardown_appcontext
 def teardown_db_context(exception=None):
