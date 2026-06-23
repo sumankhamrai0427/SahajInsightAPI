@@ -69,7 +69,7 @@ def process_rag_chat(company_code: str, session_id: str, user_query: str, worksp
                     cursor = db.cursor(dictionary=True)
                     # simple full text like search using search terms
                     if search_terms:
-                        conditions = " OR ".join(["content LIKE %s" for _ in search_terms])
+                        conditions = " AND ".join(["content LIKE %s" for _ in search_terms])
                         params = [f"%{term}%" for term in search_terms]
                         
                         if workspace_id:

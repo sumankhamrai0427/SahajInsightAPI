@@ -47,7 +47,7 @@ Provide a clean, informative, and detailed response based on the latest context 
                 def background_ingest():
                     try:
                         # Pass live_data as ai_response so it stores the raw web snippets in DB
-                        ingest_web_search(company_code, session_id, user_query, live_data, workspace_id, created_by=created_by)
+                        ingest_web_search(company_code, session_id, user_query, live_data, workspace_id, ingest_to_vector_graph=True, created_by=created_by)
                     except Exception as e:
                         print("Background Web Search Ingest Error:", e)
                 threading.Thread(target=background_ingest).start()
