@@ -79,10 +79,12 @@ def rag_chat_controller():
         user_query = data.get("user_query")
         workspace_id = data.get("workspace_id")
         
+        scope = data.get("scope", "all")
+        
         if not all([company_code, session_id, user_query]):
             return build_response(False, "Missing required fields", 400)
             
-        return process_rag_chat(company_code, session_id, user_query, workspace_id)
+        return process_rag_chat(company_code, session_id, user_query, workspace_id, scope=scope)
         
     except Exception as e:
         return build_response(False, f"Chat Error: {str(e)}", 500)

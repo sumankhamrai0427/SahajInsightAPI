@@ -26,7 +26,7 @@ def _get_company_db_name(company_code):
             except Exception:
                 pass
 
-def process_rag_chat(company_code: str, session_id: str, user_query: str, workspace_id: str = None):
+def process_rag_chat(company_code: str, session_id: str, user_query: str, workspace_id: str = None, scope: str = "all"):
     """
     Handles a user chat query by retrieving context from both ChromaDB and ArangoDB,
     then passing it to the LLM.
@@ -36,8 +36,11 @@ def process_rag_chat(company_code: str, session_id: str, user_query: str, worksp
         if workspace_id is not None:
             workspace_id = str(workspace_id)
             
+        # Determine whether to search globally/workspace-wide or strictly session-wide
+        active_session_id = session_id if scope == "selected" else None
+            
         # 1. Retrieve from Vector DB (ChromaDB)
-        vector_results = query_chroma(company_code, user_query, n_results=5, workspace_id=workspace_id, session_id=session_id)
+        vector_results = query_chroma(company_code, user_query, n_results=5, workspace_id=workspace_id, session_id=active_session_id)
         
         vector_context = []
         if vector_results and "documents" in vector_results and vector_results["documents"]:
@@ -50,7 +53,7 @@ def process_rag_chat(company_code: str, session_id: str, user_query: str, worksp
         # For speed, we just take significant words > 4 chars.
         search_terms = [w.strip('?.,') for w in user_query.split() if len(w) > 4]
         
-        graph_results = query_graph_context(company_code, search_terms, workspace_id=workspace_id, session_id=session_id)
+        graph_results = query_graph_context(company_code, search_terms, workspace_id=workspace_id, session_id=active_session_id)
         
         graph_text = ""
         if graph_results:
@@ -74,10 +77,10 @@ def process_rag_chat(company_code: str, session_id: str, user_query: str, worksp
                         conditions = " OR ".join(["content LIKE %s" for _ in search_terms])
                         params = [f"%{term}%" for term in search_terms]
                         
-                        if session_id:
+                        if active_session_id:
                             # Try with session filter first
                             conditions_sess = f"({conditions}) AND session_id = %s"
-                            params_sess = params + [session_id]
+                            params_sess = params + [active_session_id]
                             cursor.execute(f"SELECT content FROM normalized_knowledge WHERE {conditions_sess} LIMIT 25", params_sess)
                             db_results = cursor.fetchall()
                         
@@ -95,10 +98,10 @@ def process_rag_chat(company_code: str, session_id: str, user_query: str, worksp
                             
                     # Robust Fallback: if no search terms match, or no results found, fetch recent/any records from this session, workspace or globally
                     if not db_results:
-                        if session_id:
+                        if active_session_id:
                             cursor.execute(
                                 "SELECT content FROM normalized_knowledge WHERE session_id = %s LIMIT 25",
-                                (session_id,)
+                                (active_session_id,)
                             )
                             db_results = cursor.fetchall()
                         if not db_results and workspace_id and str(workspace_id).lower() != "all":
