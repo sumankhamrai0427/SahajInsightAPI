@@ -30,6 +30,8 @@ def delete_company():
         for res in cursor.stored_results():
             result = res.fetchone()
 
+        conn.commit()
+
         cursor.close()
         conn.close()
 
