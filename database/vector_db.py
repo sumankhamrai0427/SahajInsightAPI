@@ -42,10 +42,10 @@ def add_chunks_to_chroma(company_code: str, chunks: list, metadatas: list, ids: 
         ids=ids
     )
 
-def query_chroma(company_code: str, query_text: str, n_results: int = 5, workspace_id: str = None):
+def query_chroma(company_code: str, query_text: str, n_results: int = 5, workspace_id: str = None, session_id: str = None):
     """
     Semantically search the vector DB for the most relevant chunks.
-    Filters by workspace_id if provided, with a fallback to search all company docs.
+    Filters by session_id if provided, with fallbacks to workspace_id or no filter.
     """
     collection = get_or_create_collection(company_code)
     
@@ -54,7 +54,17 @@ def query_chroma(company_code: str, query_text: str, n_results: int = 5, workspa
         "n_results": n_results
     }
     
-    # Try querying with workspace filter first (if specified and not "all")
+    # Try querying with session_id filter first (if specified)
+    if session_id:
+        query_args["where"] = {"session_id": str(session_id)}
+        try:
+            results = collection.query(**query_args)
+            if results and "documents" in results and results["documents"] and any(results["documents"]):
+                return results
+        except Exception as e:
+            print(f"[ChromaDB Session Filter Query Error] {e}")
+            
+    # Try querying with workspace filter (if specified and not "all")
     if workspace_id and str(workspace_id).lower() != "all":
         query_args["where"] = {
             "$or": [
@@ -67,9 +77,9 @@ def query_chroma(company_code: str, query_text: str, n_results: int = 5, workspa
             if results and "documents" in results and results["documents"] and any(results["documents"]):
                 return results
         except Exception as e:
-            print(f"[ChromaDB Filter Query Error] {e}")
+            print(f"[ChromaDB Workspace Filter Query Error] {e}")
             
-    # Fallback: Query all documents in the company collection without workspace filter
+    # Fallback: Query all documents in the company collection without any filter
     if "where" in query_args:
         del query_args["where"]
         

@@ -131,6 +131,7 @@ def process_and_store_data(company_code: str, session_id: str, df: pd.DataFrame,
                         
                         n["_key"] = new_key
                         n["workspace_id"] = workspace_id
+                        n["session_id"] = session_id
                         key_map[old_key] = new_key
                         normalized_nodes.append(n)
                         
@@ -148,6 +149,7 @@ def process_and_store_data(company_code: str, session_id: str, df: pd.DataFrame,
                         e["_from"] = new_frm
                         e["_to"] = new_to
                         e["workspace_id"] = workspace_id
+                        e["session_id"] = session_id
                         normalized_edges.append(e)
                         
                     all_nodes.extend(normalized_nodes)
@@ -271,6 +273,7 @@ def process_and_store_text(company_code: str, session_id: str, text: str, source
                 
                 n["_key"] = new_key
                 n["workspace_id"] = workspace_id
+                n["session_id"] = session_id
                 key_map[old_key] = new_key
                 normalized_nodes.append(n)
                 
@@ -287,6 +290,7 @@ def process_and_store_text(company_code: str, session_id: str, text: str, source
                 e["_from"] = new_frm
                 e["_to"] = new_to
                 e["workspace_id"] = workspace_id
+                e["session_id"] = session_id
                 normalized_edges.append(e)
                 
             all_nodes.extend(normalized_nodes)

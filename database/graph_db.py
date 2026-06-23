@@ -106,7 +106,7 @@ def add_graph_data(company_code: str, entities: list, relationships: list):
         except Exception as e:
             print(f"[ArangoDB] Edge Insert Error: {e}")
 
-def query_graph_context(company_code: str, search_terms: list, workspace_id: str = None):
+def query_graph_context(company_code: str, search_terms: list, workspace_id: str = None, session_id: str = None):
     """
     Given a list of entity names/terms, query ArangoDB for their neighbors.
     """
@@ -129,7 +129,13 @@ def query_graph_context(company_code: str, search_terms: list, workspace_id: str
     # then traverse 1-step to find related entities.
     context = []
     
-    ws_filter = f'AND v.workspace_id == "{workspace_id}"' if workspace_id else ""
+    # Filter by session_id if provided, fallback to workspace_id
+    if session_id:
+        filter_str = f'AND v.session_id == "{session_id}"'
+    elif workspace_id:
+        filter_str = f'AND v.workspace_id == "{workspace_id}"'
+    else:
+        filter_str = ""
     
     for term in search_terms:
         # Prevent AQL injection
@@ -137,7 +143,7 @@ def query_graph_context(company_code: str, search_terms: list, workspace_id: str
         
         aql = f"""
         FOR v IN {vertex_col_name}
-            FILTER (v.name LIKE "%{term_safe}%" OR v._key LIKE "%{term_safe}%") {ws_filter}
+            FILTER (v.name LIKE "%{term_safe}%" OR v._key LIKE "%{term_safe}%") {filter_str}
             LIMIT 3
             FOR neighbor, edge IN 1..1 ANY v {edge_col_name}
             RETURN {{
