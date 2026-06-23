@@ -120,9 +120,13 @@ def process_rag_chat(company_code: str, session_id: str, user_query: str, worksp
 
         # 4. Build Prompt for LLM
         prompt = f"""
-        You are an intelligent data assistant answering user questions. You must use the provided context to identify specific entities, metrics, or records (e.g., customer names, car models, purchased items, etc.).
+        You are a strict data assistant. You must answer the user's question ONLY using the provided context (Vector context, Database context, and Graph context). 
         
-        If the context provides the specific records but lacks general information/explanation about them (e.g., whether a car model is suitable for city driving, general use cases, expert opinions, etc.), you are encouraged to supplement the answer using your own general knowledge.
+        Strict Guidelines:
+        1. If the answer to the user's question cannot be found or reasonably inferred from the provided contexts, you MUST respond with exactly: "I don't have this data."
+        2. Do NOT use your general knowledge to answer questions that are not related to or supported by the provided data (for example, general questions like "what is AI", "who is the president", or general coding/math queries).
+        3. Do NOT make up, assume, or extrapolate any information not present in the context.
+        4. Focus strictly on the entities, metrics, and records present in the context.
         
         --- VECTOR CONTEXT (Semantic Chunks) ---
         {vector_text if vector_text else "No specific vector context found."}
@@ -136,52 +140,63 @@ def process_rag_chat(company_code: str, session_id: str, user_query: str, worksp
         ---
         User Question: {user_query}
         
-        Answer the user question thoroughly. Highlight which parts of the information came from the database context (like customer names, purchased car models, etc.) and which parts are based on general expert knowledge (like suitability, use cases, etc.).
-        
-        If the database/vector/graph context is completely empty or contains absolutely no data matching the overall domain of the query (e.g. no customers, cars, or order records exist in the context tables), only then say "I don't have enough data to answer that." Otherwise, synthesize the available records with your expert general knowledge to provide a comprehensive response.
+        Answer the user question strictly using the context above. If you cannot answer it using only the provided context, respond with "I don't have this data."
         """
         
         # 4. Get LLM Answer
         ai_answer = call_llm(prompt)
         
-        # Prepend source URLs/references to the RAG Chat response
-        import re
-        unique_sources = []
+        # Check if the LLM output indicates lack of data
+        clean_ai_answer = ai_answer.strip().strip('"').strip("'").strip().lower()
+        is_no_data = (
+            "don't have this data" in clean_ai_answer or 
+            "don't have enough data" in clean_ai_answer or 
+            "do not have this data" in clean_ai_answer or
+            "i don't have that data" in clean_ai_answer or
+            clean_ai_answer == "i don't have this data"
+        )
         
-        # 1. Parse web search URLs from the text content
-        all_context = "\n".join(vector_context) + "\n" + db_text
-        web_urls = re.findall(r'---\s+Source:\s*(https?://\S+)', all_context)
-        old_web_urls = re.findall(r'(?:^|\n)Source:\s*(https?://\S+)', all_context)
-        web_urls.extend(old_web_urls)
-        
-        for url in web_urls:
-            if url not in unique_sources:
-                unique_sources.append(url)
-                
-        # 2. Extract database table/file sources from metadata
-        db_sources = []
-        if vector_results and "metadatas" in vector_results and vector_results["metadatas"]:
-            for meta in vector_results["metadatas"][0]:
-                if meta and isinstance(meta, dict):
-                    src = meta.get("source")
-                    if src:
-                        if src.startswith("web_search_"):
-                            continue
-                        table_repr = f"Database Table: {src.replace('.csv', '')}"
-                        if table_repr not in db_sources:
-                            db_sources.append(table_repr)
-                            
-        final_sources = unique_sources + db_sources
-        
-        if final_sources:
-            source_header = "Sources:\n" + "\n".join(f"- {s}" for s in final_sources) + "\n\n---\n\n"
+        if is_no_data:
+            ai_answer = "I don't have this data."
         else:
-            if vector_context or db_text or graph_text:
-                source_header = "Source: Database / Uploaded Files\n\n---\n\n"
+            # Prepend source URLs/references to the RAG Chat response
+            import re
+            unique_sources = []
+            
+            # 1. Parse web search URLs from the text content
+            all_context = "\n".join(vector_context) + "\n" + db_text
+            web_urls = re.findall(r'---\s+Source:\s*(https?://\S+)', all_context)
+            old_web_urls = re.findall(r'(?:^|\n)Source:\s*(https?://\S+)', all_context)
+            web_urls.extend(old_web_urls)
+            
+            for url in web_urls:
+                if url not in unique_sources:
+                    unique_sources.append(url)
+                    
+            # 2. Extract database table/file sources from metadata
+            db_sources = []
+            if vector_results and "metadatas" in vector_results and vector_results["metadatas"]:
+                for meta in vector_results["metadatas"][0]:
+                    if meta and isinstance(meta, dict):
+                        src = meta.get("source")
+                        if src:
+                            if src.startswith("web_search_"):
+                                continue
+                            table_repr = f"Database Table: {src.replace('.csv', '')}"
+                            if table_repr not in db_sources:
+                                db_sources.append(table_repr)
+                                
+            final_sources = unique_sources + db_sources
+            
+            if final_sources:
+                source_header = "Sources:\n" + "\n".join(f"- {s}" for s in final_sources) + "\n\n---\n\n"
             else:
-                source_header = "Source: AI General Knowledge\n\n---\n\n"
-                
-        ai_answer = source_header + ai_answer
+                if vector_context or db_text or graph_text:
+                    source_header = "Source: Database / Uploaded Files\n\n---\n\n"
+                else:
+                    source_header = "Source: AI General Knowledge\n\n---\n\n"
+                    
+            ai_answer = source_header + ai_answer
         
         # 5. Build final response
         return build_response(True, "RAG Chat Successful", 200, {
