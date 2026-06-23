@@ -1267,20 +1267,32 @@ def upload_and_insights_new_controller():
             # Construct DB schema and columns
             db_schema = []
             db_cols = []
+            allowed_missing = set()
             for c in cols:
                 col_name = c["Field"]
                 if col_name.lower() == "row_hash":
                     continue
                 db_cols.append(col_name.lower())
+                
+                is_pri = c["Key"] == "PRI"
+                is_auto = "auto_increment" in str(c.get("Extra", "")).lower()
+                dtype = str(c["Type"]).upper()
+                is_int = any(t in dtype for t in ("INT", "INTEGER", "BIGINT"))
+                
+                if is_pri:
+                    if is_auto or not is_int:
+                        allowed_missing.add(col_name.lower())
+                        
                 db_schema.append({
                     "column": col_name,
                     "datatype": c["Type"],
-                    "primary": c["Key"] == "PRI"
+                    "primary": is_pri,
+                    "extra": c.get("Extra", "")
                 })
 
             column_count = len(db_cols)
 
-            missing_in_csv = [c for c in db_cols if c not in csv_cols]
+            missing_in_csv = [c for c in db_cols if c not in csv_cols and c not in allowed_missing]
             extra_in_csv = [c for c in csv_cols if c not in db_cols]
 
             #  Schema mismatch
@@ -1376,7 +1388,8 @@ def upload_and_insights_new_controller():
                         schema.append({
                             "column": col_name,
                             "datatype": c["Type"],
-                            "primary": c["Key"] == "PRI"
+                            "primary": c["Key"] == "PRI",
+                            "extra": c.get("Extra", "")
                         })
 
                 actual_rows = 0

@@ -175,7 +175,10 @@ def process_and_store_text(company_code: str, session_id: str, text: str, source
     if not text or not text.strip():
         return False, "Text is empty"
         
-    all_chunks = text_splitter.split_text(text)
+    if "--- Source:" in text:
+        all_chunks = [chunk.strip() for chunk in text.split("\n\n") if chunk.strip()]
+    else:
+        all_chunks = text_splitter.split_text(text)
     metadatas = []
     ids = []
     
