@@ -37,8 +37,11 @@ Provide a clean, informative, and detailed response based on the latest context 
             for s in sources:
                 if s not in unique_sources:
                     unique_sources.append(s)
-            source_header = "Sources:\n" + "\n".join(f"- {s}" for s in unique_sources) + "\n\n"
-            ai_response = source_header + ai_response
+            source_header = "Sources:\n" + "\n".join(f"- {s}" for s in unique_sources) + "\n\n---\n\n"
+        else:
+            source_header = "Source: AI General Knowledge\n\n---\n\n"
+            
+        ai_response = source_header + ai_response
         
         session_id = data.get("session_id")
         created_by = data.get("created_by")

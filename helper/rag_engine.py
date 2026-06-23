@@ -117,21 +117,44 @@ def process_rag_chat(company_code: str, session_id: str, user_query: str, worksp
         # 4. Get LLM Answer
         ai_answer = call_llm(prompt)
         
-        # Prepend source URLs to the RAG Chat response if found in context
+        # Prepend source URLs/references to the RAG Chat response
         import re
-        all_context = "\n".join(vector_context) + "\n" + db_text
-        sources = re.findall(r'---\s+Source:\s*(https?://\S+)', all_context)
-        # Also parse old format "Source: https://..." if any
-        old_sources = re.findall(r'(?:^|\n)Source:\s*(https?://\S+)', all_context)
-        sources.extend(old_sources)
+        unique_sources = []
         
-        if sources:
-            unique_sources = []
-            for s in sources:
-                if s not in unique_sources:
-                    unique_sources.append(s)
-            source_header = "Sources:\n" + "\n".join(f"- {s}" for s in unique_sources) + "\n\n---\n\n"
-            ai_answer = source_header + ai_answer
+        # 1. Parse web search URLs from the text content
+        all_context = "\n".join(vector_context) + "\n" + db_text
+        web_urls = re.findall(r'---\s+Source:\s*(https?://\S+)', all_context)
+        old_web_urls = re.findall(r'(?:^|\n)Source:\s*(https?://\S+)', all_context)
+        web_urls.extend(old_web_urls)
+        
+        for url in web_urls:
+            if url not in unique_sources:
+                unique_sources.append(url)
+                
+        # 2. Extract database table/file sources from metadata
+        db_sources = []
+        if vector_results and "metadatas" in vector_results and vector_results["metadatas"]:
+            for meta in vector_results["metadatas"][0]:
+                if meta and isinstance(meta, dict):
+                    src = meta.get("source")
+                    if src:
+                        if src.startswith("web_search_"):
+                            continue
+                        table_repr = f"Database Table: {src.replace('.csv', '')}"
+                        if table_repr not in db_sources:
+                            db_sources.append(table_repr)
+                            
+        final_sources = unique_sources + db_sources
+        
+        if final_sources:
+            source_header = "Sources:\n" + "\n".join(f"- {s}" for s in final_sources) + "\n\n---\n\n"
+        else:
+            if vector_context or db_text or graph_text:
+                source_header = "Source: Database / Uploaded Files\n\n---\n\n"
+            else:
+                source_header = "Source: AI General Knowledge\n\n---\n\n"
+                
+        ai_answer = source_header + ai_answer
         
         # 5. Build final response
         return build_response(True, "RAG Chat Successful", 200, {
