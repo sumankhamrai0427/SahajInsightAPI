@@ -126,6 +126,19 @@ def save_rag_chat_controller():
         cursor = db.cursor()
         cursor.execute(
             """
+            CREATE TABLE IF NOT EXISTS rag_chat_history (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                session_id VARCHAR(100),
+                user_id VARCHAR(100),
+                workspace_id INT,
+                user_query TEXT,
+                ai_response TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """
+        )
+        cursor.execute(
+            """
             INSERT INTO rag_chat_history (session_id, user_id, workspace_id, user_query, ai_response)
             VALUES (%s, %s, %s, %s, %s)
             """,
@@ -162,6 +175,19 @@ def get_rag_chat_history_controller():
             return build_response(False, "Database connection failed", 500)
 
         cursor = db.cursor(dictionary=True)
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS rag_chat_history (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                session_id VARCHAR(100),
+                user_id VARCHAR(100),
+                workspace_id INT,
+                user_query TEXT,
+                ai_response TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """
+        )
         if workspace_id:
             cursor.execute(
                 """

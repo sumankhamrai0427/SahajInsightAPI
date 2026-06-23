@@ -208,6 +208,11 @@ def assign_user_to_workspace_route():
 def get_assigned_users_route():
     return get_assigned_users_controller()
 
+@app.route("/workspace/suggest_questions", methods=["POST"])
+def suggest_workspace_questions_route():
+    from controller.workspace_controller import suggest_questions_controller
+    return suggest_questions_controller()
+
 @app.route("/user/my_workspaces", methods=["POST"])
 def get_user_workspaces_route():
     return get_user_workspaces_controller()

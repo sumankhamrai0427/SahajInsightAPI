@@ -35,7 +35,15 @@ def get_master_db():
     return _create_master_db_connection()
 
 # ---------- COMPANY DB CONNECTION ----------
+def resolve_company_db_name(company_identifier):
+    if not company_identifier:
+        return company_identifier
+    if company_identifier.startswith("sahaj_cmp_"):
+        return company_identifier
+    return f"sahaj_cmp_{company_identifier}"
+
 def _create_company_db_connection(company_db_name):
+    company_db_name = resolve_company_db_name(company_db_name)
     try:
         conn = mysql.connector.connect(
             **MYSQL_CONFIG,
@@ -46,6 +54,7 @@ def _create_company_db_connection(company_db_name):
         raise Exception(f"Company DB connection error: {err}")
 
 def get_company_db(company_db_name):
+    company_db_name = resolve_company_db_name(company_db_name)
     if has_request_context():
         if not hasattr(g, '_company_dbs'):
             g._company_dbs = {}

@@ -14,7 +14,10 @@ def get_or_create_collection(company_code: str):
     Returns the ChromaDB collection for a specific company.
     Creates it if it doesn't exist.
     """
-    collection_name = f"{company_code}_rag_docs"
+    db_name = company_code
+    if db_name and not db_name.startswith("sahaj_cmp_"):
+        db_name = f"sahaj_cmp_{db_name}"
+    collection_name = f"{db_name}_rag_docs"
     # Ensure collection name is valid (alphanumeric and underscores only)
     import re
     collection_name = re.sub(r'[^a-zA-Z0-9_]', '_', collection_name)
@@ -42,7 +45,7 @@ def add_chunks_to_chroma(company_code: str, chunks: list, metadatas: list, ids: 
 def query_chroma(company_code: str, query_text: str, n_results: int = 5, workspace_id: str = None):
     """
     Semantically search the vector DB for the most relevant chunks.
-    Filters by workspace_id if provided.
+    Filters by workspace_id if provided, with a fallback to search all company docs.
     """
     collection = get_or_create_collection(company_code)
     
@@ -51,18 +54,35 @@ def query_chroma(company_code: str, query_text: str, n_results: int = 5, workspa
         "n_results": n_results
     }
     
-    if workspace_id:
-        query_args["where"] = {"workspace_id": str(workspace_id)}
+    # Try querying with workspace filter first (if specified and not "all")
+    if workspace_id and str(workspace_id).lower() != "all":
+        query_args["where"] = {
+            "$or": [
+                {"workspace_id": str(workspace_id)},
+                {"workspace_id": "all"}
+            ]
+        }
+        try:
+            results = collection.query(**query_args)
+            if results and "documents" in results and results["documents"] and any(results["documents"]):
+                return results
+        except Exception as e:
+            print(f"[ChromaDB Filter Query Error] {e}")
+            
+    # Fallback: Query all documents in the company collection without workspace filter
+    if "where" in query_args:
+        del query_args["where"]
         
-    results = collection.query(**query_args)
-    
-    return results
+    return collection.query(**query_args)
 
 def delete_collection(company_code: str):
     """
     Deletes an entire collection. Useful for resetting.
     """
-    collection_name = f"{company_code}_rag_docs"
+    db_name = company_code
+    if db_name and not db_name.startswith("sahaj_cmp_"):
+        db_name = f"sahaj_cmp_{db_name}"
+    collection_name = f"{db_name}_rag_docs"
     import re
     collection_name = re.sub(r'[^a-zA-Z0-9_]', '_', collection_name)
     try:

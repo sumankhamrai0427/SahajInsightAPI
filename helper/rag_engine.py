@@ -67,19 +67,43 @@ def process_rag_chat(company_code: str, session_id: str, user_query: str, worksp
                 db = get_company_db(company_db_name)
                 if db:
                     cursor = db.cursor(dictionary=True)
-                    # simple full text like search using search terms
+                    # Query using search terms with flexible OR LIKE matching
+                    db_results = []
                     if search_terms:
-                        conditions = " AND ".join(["content LIKE %s" for _ in search_terms])
+                        # Join with OR to match any keyword, making the search flexible
+                        conditions = " OR ".join(["content LIKE %s" for _ in search_terms])
                         params = [f"%{term}%" for term in search_terms]
                         
-                        if workspace_id:
-                            conditions = f"({conditions}) AND workspace_id = %s"
-                            params.append(workspace_id)
+                        if workspace_id and str(workspace_id).lower() != "all":
+                            # Try with workspace filter first
+                            conditions_ws = f"({conditions}) AND (workspace_id = %s OR workspace_id = 'all' OR workspace_id IS NULL)"
+                            params_ws = params + [workspace_id]
+                            cursor.execute(f"SELECT content FROM normalized_knowledge WHERE {conditions_ws} LIMIT 25", params_ws)
+                            db_results = cursor.fetchall()
                             
-                        cursor.execute(f"SELECT content FROM normalized_knowledge WHERE {conditions} LIMIT 5", params)
-                        db_results = cursor.fetchall()
-                        mysql_chunks = len(db_results)
-                        db_text = "\n".join([r['content'] for r in db_results])
+                        if not db_results:
+                            # Fallback: query across all workspace data for the company
+                            cursor.execute(f"SELECT content FROM normalized_knowledge WHERE {conditions} LIMIT 25", params)
+                            db_results = cursor.fetchall()
+                            
+                    # Robust Fallback: if no search terms match, or no results found, fetch recent/any records from this workspace or globally
+                    if not db_results:
+                        if workspace_id and str(workspace_id).lower() != "all":
+                            cursor.execute(
+                                """
+                                SELECT content FROM normalized_knowledge 
+                                WHERE workspace_id = %s OR workspace_id = 'all' OR workspace_id IS NULL 
+                                LIMIT 25
+                                """,
+                                (workspace_id,)
+                            )
+                            db_results = cursor.fetchall()
+                        if not db_results:
+                            cursor.execute("SELECT content FROM normalized_knowledge LIMIT 25")
+                            db_results = cursor.fetchall()
+                            
+                    mysql_chunks = len(db_results)
+                    db_text = "\n".join([r['content'] for r in db_results])
         except Exception as e:
             print(f"MySQL RAG Error: {e}")
         finally:
@@ -96,7 +120,9 @@ def process_rag_chat(company_code: str, session_id: str, user_query: str, worksp
 
         # 4. Build Prompt for LLM
         prompt = f"""
-        You are an intelligent data assistant answering user questions based on the provided context.
+        You are an intelligent data assistant answering user questions. You must use the provided context to identify specific entities, metrics, or records (e.g., customer names, car models, purchased items, etc.).
+        
+        If the context provides the specific records but lacks general information/explanation about them (e.g., whether a car model is suitable for city driving, general use cases, expert opinions, etc.), you are encouraged to supplement the answer using your own general knowledge.
         
         --- VECTOR CONTEXT (Semantic Chunks) ---
         {vector_text if vector_text else "No specific vector context found."}
@@ -110,8 +136,9 @@ def process_rag_chat(company_code: str, session_id: str, user_query: str, worksp
         ---
         User Question: {user_query}
         
-        Answer the question thoroughly and accurately using ONLY the context provided above. 
-        If the answer is not in the context, say "I don't have enough data to answer that."
+        Answer the user question thoroughly. Highlight which parts of the information came from the database context (like customer names, purchased car models, etc.) and which parts are based on general expert knowledge (like suitability, use cases, etc.).
+        
+        If the database/vector/graph context is completely empty or contains absolutely no data matching the overall domain of the query (e.g. no customers, cars, or order records exist in the context tables), only then say "I don't have enough data to answer that." Otherwise, synthesize the available records with your expert general knowledge to provide a comprehensive response.
         """
         
         # 4. Get LLM Answer

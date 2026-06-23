@@ -45,11 +45,12 @@ def ensure_graph_collections(company_code: str):
     db = get_graph_db()
     if not db: return None, None
     
-    # We will use one vertex collection and one edge collection per company
-    # Alternatively, we could use a single global collection and filter by company_code.
-    # We'll use one collection per company to ensure isolation.
+    db_name = company_code
+    if db_name and not db_name.startswith("sahaj_cmp_"):
+        db_name = f"sahaj_cmp_{db_name}"
+    
     import re
-    safe_code = re.sub(r'[^a-zA-Z0-9_]', '_', company_code)
+    safe_code = re.sub(r'[^a-zA-Z0-9_]', '_', db_name)
     
     vertex_col_name = f"nodes_{safe_code}"
     edge_col_name = f"edges_{safe_code}"
@@ -112,8 +113,12 @@ def query_graph_context(company_code: str, search_terms: list, workspace_id: str
     db = get_graph_db()
     if not db: return []
     
+    db_name = company_code
+    if db_name and not db_name.startswith("sahaj_cmp_"):
+        db_name = f"sahaj_cmp_{db_name}"
+        
     import re
-    safe_code = re.sub(r'[^a-zA-Z0-9_]', '_', company_code)
+    safe_code = re.sub(r'[^a-zA-Z0-9_]', '_', db_name)
     vertex_col_name = f"nodes_{safe_code}"
     edge_col_name = f"edges_{safe_code}"
     

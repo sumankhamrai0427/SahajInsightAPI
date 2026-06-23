@@ -1397,6 +1397,22 @@ CREATE TABLE IF NOT EXISTS user_roles (
         """
         )
         company_conn.commit()
+
+        # ---------------- RAG CHAT HISTORY ----------------
+        c.execute(
+            f"""
+        CREATE TABLE IF NOT EXISTS rag_chat_history (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            session_id VARCHAR(100),
+            user_id VARCHAR(100),
+            workspace_id INT,
+            user_query TEXT,
+            ai_response TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE={DB_ENGINE} DEFAULT CHARSET={DB_CHARSET}
+        """
+        )
+        company_conn.commit()
         c.close()
         company_conn.close()
 
