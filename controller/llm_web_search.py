@@ -13,12 +13,19 @@ def llm_web_search_controller():
         if not user_query:
             return build_response(False, "Missing user_query", 400)
             
+        # Fetch live web data first
+        from helper.web_search import live_web_search
+        live_data = live_web_search(user_query)
+
         # Structure prompt for search response
         prompt = f"""
 You are a web search assistant. Research, synthesize, and summarize details for the query below.
 Query: "{user_query}"
 
-Provide a clean, informative, and detailed response based on the latest context.
+Here is the latest data retrieved from the web:
+{live_data}
+
+Provide a clean, informative, and detailed response based on the latest context provided above.
 """
         ai_response = call_llm(prompt)
         
@@ -39,7 +46,8 @@ Provide a clean, informative, and detailed response based on the latest context.
                 from helper.rag_ingestion import ingest_web_search
                 def background_ingest():
                     try:
-                        ingest_web_search(company_code, session_id, user_query, ai_response, workspace_id, created_by=created_by)
+                        # Pass live_data as ai_response so it stores the raw web snippets in DB
+                        ingest_web_search(company_code, session_id, user_query, live_data, workspace_id, created_by=created_by)
                     except Exception as e:
                         print("Background Web Search Ingest Error:", e)
                 threading.Thread(target=background_ingest).start()
