@@ -90,22 +90,99 @@ def normalize_date_columns(df: pd.DataFrame, schema: list):
         if dtype == "DATE":
             df[col] = pd.to_datetime(
                 df[col],
-                errors="coerce",
-                infer_datetime_format=True
+                errors="coerce"
             ).dt.strftime("%Y-%m-%d")
 
         # DATETIME
         elif dtype == "DATETIME":
             df[col] = pd.to_datetime(
                 df[col],
-                errors="coerce",
-                infer_datetime_format=True
+                errors="coerce"
             ).dt.strftime("%Y-%m-%d %H:%M:%S")
 
         # NaT → None (important)
         df[col] = df[col].where(pd.notnull(df[col]), None)
 
     return df
+
+def align_csv_to_schema(df: pd.DataFrame, schema: list, drop_unmapped=False):
+    """
+    Map and rename the columns of df (CSV) to match the target database schema.
+    Returns a new DataFrame where columns match the schema.
+    If a schema column is not found/mapped to CSV, it will be initialized as None
+    (or populated with UUIDs for string primary keys, or dropped if drop_unmapped is True).
+    """
+    import uuid
+    df = df.copy()
+    
+    # Clean the CSV column names just like we did in upload
+    df.columns = clean_column_names(df.columns)
+    
+    csv_cols = list(df.columns)
+    schema_cols = [c["column"] for c in schema]
+    
+    mapping = {} # maps schema_col -> csv_col
+    used_csv_cols = set()
+    
+    # Helper to normalize a string (lowercase, alphanumeric only)
+    def norm(s):
+        return re.sub(r'[^a-z0-9]', '', str(s).lower())
+
+    # Pass 1: Try exact match (case-insensitive and normalized)
+    for scol in schema_cols:
+        scol_norm = norm(scol)
+        for ccol in csv_cols:
+            if ccol in used_csv_cols:
+                continue
+            if norm(ccol) == scol_norm:
+                mapping[scol] = ccol
+                used_csv_cols.add(ccol)
+                break
+
+    # Pass 2: Fuzzy/Sub-string match or positional fallback for remaining columns
+    unmapped_schema_cols = [c for c in schema_cols if c not in mapping]
+    unmapped_csv_cols = [c for c in csv_cols if c not in used_csv_cols]
+    
+    schema_info = {c["column"]: c for c in schema}
+    
+    # Identify which schema columns are "generated PKs"
+    generated_pks = set()
+    for scol in unmapped_schema_cols:
+        col_def = schema_info[scol]
+        if col_def.get("primary"):
+            # Check if there is any column in the CSV that looks like a primary key
+            has_csv_pk = any(norm(cc) in ("id", "uuid", norm(scol)) for cc in csv_cols)
+            if not has_csv_pk:
+                generated_pks.add(scol)
+                
+    # Map the remaining non-generated columns positionally
+    remaining_schema_cols = [c for c in unmapped_schema_cols if c not in generated_pks]
+    
+    for i, scol in enumerate(remaining_schema_cols):
+        if i < len(unmapped_csv_cols):
+            mapping[scol] = unmapped_csv_cols[i]
+            used_csv_cols.add(unmapped_csv_cols[i])
+            
+    # Now reconstruct the dataframe using the schema columns
+    new_df = pd.DataFrame(index=df.index)
+    for scol in schema_cols:
+        if scol in mapping:
+            new_df[scol] = df[mapping[scol]]
+        else:
+            # Check if this column is a primary key in schema
+            col_def = schema_info.get(scol, {})
+            if col_def.get("primary"):
+                dtype = str(col_def.get("datatype", "")).upper()
+                # If it's not an integer type, it's not auto-incremented by MySQL
+                if dtype not in ("INT", "INTEGER", "BIGINT"):
+                    # Generate UUIDs for all rows
+                    new_df[scol] = [str(uuid.uuid4()) for _ in range(len(df))]
+                    continue
+            
+            if not drop_unmapped:
+                new_df[scol] = None
+            
+    return new_df
 
 def build_preview_response(file_name, table_name, schema=None, is_existing=False):
     path = os.path.join(UPLOAD_FOLDER, file_name)
@@ -120,14 +197,7 @@ def build_preview_response(file_name, table_name, schema=None, is_existing=False
     if not is_existing:
         if not schema:
             raise Exception("Schema required for new table preview")
-
-        expected_cols = [c["column"] for c in schema]
-
-        for col in expected_cols:
-            if col not in df.columns:
-                df[col] = None
-
-        df = df[expected_cols]
+        df = align_csv_to_schema(df, schema)
 
     # ---------- COMMON ----------
     df = normalize_boolean_columns(df)
@@ -138,6 +208,7 @@ def build_preview_response(file_name, table_name, schema=None, is_existing=False
         "total_rows": df_clean.shape[0],
         "preview_rows": df_clean.head(5).fillna("").to_dict(orient="records")
     }
+
 
 # -------------------------
 # Utilities
@@ -1170,16 +1241,7 @@ def upload_and_insights_new_controller():
                     cur.close()
                     return build_response(False, "Schema required for new table preview", 400)
 
-                expected_cols = [c["column"] for c in schema]
-
-                # add missing columns
-                for col in expected_cols:
-                    if col not in df_clean.columns:
-                        df_clean[col] = None
-
-                # remove extra columns
-                df_clean = df_clean[expected_cols]
-
+                df_clean = align_csv_to_schema(df_clean, schema)
                 df_clean = normalize_boolean_columns(df_clean)
 
                 # preview_rows = df_clean.head(5).fillna("").to_dict(orient="records")
@@ -1202,13 +1264,20 @@ def upload_and_insights_new_controller():
             cur.execute(f"SHOW COLUMNS FROM `{table_name}`")
             cols = cur.fetchall()
 
-            db_cols = [
-                c["Field"].lower()
-                for c in cols
-                # if c["Field"].lower() not in ("id", "row_hash")
-                if c["Field"].lower() != "row_hash"
+            # Construct DB schema and columns
+            db_schema = []
+            db_cols = []
+            for c in cols:
+                col_name = c["Field"]
+                if col_name.lower() == "row_hash":
+                    continue
+                db_cols.append(col_name.lower())
+                db_schema.append({
+                    "column": col_name,
+                    "datatype": c["Type"],
+                    "primary": c["Key"] == "PRI"
+                })
 
-            ]
             column_count = len(db_cols)
 
             missing_in_csv = [c for c in db_cols if c not in csv_cols]
@@ -1222,7 +1291,8 @@ def upload_and_insights_new_controller():
                     "extra_in_csv": extra_in_csv
                 })
 
-            # Schema OK → preview + message
+            # Schema OK → align and preview
+            df_clean = align_csv_to_schema(df_clean, db_schema)
             df_clean = normalize_boolean_columns(df_clean)
 
             preview_rows = df_clean.head(5).fillna("").to_dict(orient="records")
@@ -1233,9 +1303,7 @@ def upload_and_insights_new_controller():
                 "table_name": table_name,
                 "total_rows": total_rows,
                 "preview_rows": preview_rows,
-                # "summary_message": "Table already exists."
                 "summary_message": f"Table `{table_name}` already exists with {column_count} columns."
-
             })
 
         # --------------------------
@@ -1296,6 +1364,21 @@ def upload_and_insights_new_controller():
                 cur3.execute(f"SELECT COUNT(*) AS cnt FROM `{table_name}`")
                 before_rows = cur3.fetchone()["cnt"]
 
+                # Ensure we have schema to align CSV columns correctly
+                if not schema:
+                    cur3.execute(f"SHOW COLUMNS FROM `{table_name}`")
+                    cols = cur3.fetchall()
+                    schema = []
+                    for c in cols:
+                        col_name = c["Field"]
+                        if col_name.lower() == "row_hash":
+                            continue
+                        schema.append({
+                            "column": col_name,
+                            "datatype": c["Type"],
+                            "primary": c["Key"] == "PRI"
+                        })
+
                 actual_rows = 0
                 actual_columns = 0
                 total_rows = 0
@@ -1333,6 +1416,7 @@ def upload_and_insights_new_controller():
             # ----------------------
             # CLEAN & NORMALIZE
             # ----------------------
+                        df_chunk = align_csv_to_schema(df_chunk, schema, drop_unmapped=True)
                         df_chunk = df_chunk.drop_duplicates().dropna(how="all")
                         df_chunk = normalize_boolean_columns(df_chunk)
 

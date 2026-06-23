@@ -160,7 +160,9 @@ def process_and_store_data(company_code: str, session_id: str, df: pd.DataFrame,
                 pass
         if db is not None:
             try:
-                db.close()
+                from flask import has_request_context
+                if not has_request_context():
+                    db.close()
             except Exception:
                 pass
 
@@ -285,7 +287,9 @@ def process_and_store_text(company_code: str, session_id: str, text: str, source
                 pass
         if db is not None:
             try:
-                db.close()
+                from flask import has_request_context
+                if not has_request_context():
+                    db.close()
             except Exception:
                 pass
 
