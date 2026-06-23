@@ -266,13 +266,29 @@ def rag_ingest_selected_controller():
         # and then push to VectorDB/GraphDB via process_and_store_text.
         cursor = company_db.cursor(dictionary=True)
         for sname in web_searches:
+            # Check if this web search already exists in target workspace
+            safe_workspace_id = None if not workspace_id or str(workspace_id).strip() == "" else workspace_id
+            if safe_workspace_id:
+                cursor.execute(
+                    "SELECT 1 FROM uploaded_files WHERE file_name = %s AND file_type = 'web_search' AND workspace_id = %s",
+                    (sname, safe_workspace_id)
+                )
+            else:
+                cursor.execute(
+                    "SELECT 1 FROM uploaded_files WHERE file_name = %s AND file_type = 'web_search' AND workspace_id IS NULL",
+                    (sname,)
+                )
+            if cursor.fetchone():
+                print(f"Web search {sname} already exists in workspace {safe_workspace_id}, skipping duplicate ingestion.")
+                continue
+
             cursor.execute("SELECT content FROM normalized_knowledge WHERE source_type = 'web_search' AND source_name = %s", (sname,))
             rows = cursor.fetchall()
             if rows:
                 # Combine chunks back to a single text to process, or process them as a single block
                 combined_text = "\n".join([r["content"] for r in rows if r["content"]])
                 if combined_text:
-                    process_and_store_text(company_code, session_id, combined_text, sname, workspace_id, ingest_to_vector_graph=True)
+                    process_and_store_text(company_code, session_id, combined_text, sname, workspace_id, ingest_to_vector_graph=True, created_by=created_by)
         cursor.close()
 
         return build_response(True, "Selected sources ingested for RAG successfully.", 200)

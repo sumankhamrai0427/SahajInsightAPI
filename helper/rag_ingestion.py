@@ -187,6 +187,18 @@ def process_and_store_data(company_code: str, session_id: str, df: pd.DataFrame,
             # Fix empty workspace_id
             safe_workspace_id = None if not workspace_id or str(workspace_id).strip() == "" else workspace_id
             
+            # Delete existing chunks for this source and workspace to avoid duplicate chunks in MySQL
+            if safe_workspace_id:
+                cursor.execute(
+                    "DELETE FROM normalized_knowledge WHERE source_name = %s AND source_type = %s AND workspace_id = %s",
+                    (source_name, source_type, safe_workspace_id)
+                )
+            else:
+                cursor.execute(
+                    "DELETE FROM normalized_knowledge WHERE source_name = %s AND source_type = %s AND workspace_id IS NULL",
+                    (source_name, source_type)
+                )
+
             insert_sql = """
                 INSERT INTO normalized_knowledge 
                 (company_code, session_id, workspace_id, source_type, source_name, content, metadata)
@@ -329,6 +341,18 @@ def process_and_store_text(company_code: str, session_id: str, text: str, source
             # Fix empty workspace_id
             safe_workspace_id = None if not workspace_id or str(workspace_id).strip() == "" else workspace_id
             
+            # Delete existing chunks for this source and workspace to avoid duplicate chunks in MySQL
+            if safe_workspace_id:
+                cursor.execute(
+                    "DELETE FROM normalized_knowledge WHERE source_name = %s AND source_type = %s AND workspace_id = %s",
+                    (source_name, source_type, safe_workspace_id)
+                )
+            else:
+                cursor.execute(
+                    "DELETE FROM normalized_knowledge WHERE source_name = %s AND source_type = %s AND workspace_id IS NULL",
+                    (source_name, source_type)
+                )
+
             insert_sql = """
                 INSERT INTO normalized_knowledge 
                 (company_code, session_id, workspace_id, source_type, source_name, content, metadata)
@@ -350,32 +374,53 @@ def process_and_store_text(company_code: str, session_id: str, text: str, source
             cursor.executemany(insert_sql, mysql_data)
             db.commit()
 
-            # Insert into uploaded_files
+            # Insert/Update uploaded_files
             try:
-                uf_sql = """
-                    INSERT INTO uploaded_files 
-                    (session_id, created_by, workspace_id, file_name, table_name, file_size_mb, file_type, 
-                     total_columns, last_inserted_rows, table_extraction_status, column_extraction_status, 
-                     data_insights_status, data_insert_status, insights)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """
-                uf_values = (
-                    session_id,
-                    created_by or 'system',
-                    safe_workspace_id,
-                    source_name,
-                    'Web Search Data',
-                    '0 MB',
-                    'web_search',
-                    0,
-                    len(all_chunks),
-                    'done',
-                    'done',
-                    'done',
-                    'done',
-                    '[]'
-                )
-                cursor.execute(uf_sql, uf_values)
+                if safe_workspace_id:
+                    cursor.execute(
+                        "SELECT id FROM uploaded_files WHERE file_name = %s AND file_type = 'web_search' AND workspace_id = %s",
+                        (source_name, safe_workspace_id)
+                    )
+                else:
+                    cursor.execute(
+                        "SELECT id FROM uploaded_files WHERE file_name = %s AND file_type = 'web_search' AND workspace_id IS NULL",
+                        (source_name,)
+                    )
+                existing_uf = cursor.fetchone()
+                if existing_uf:
+                    # Update existing row
+                    uf_sql = """
+                        UPDATE uploaded_files 
+                        SET last_inserted_rows = %s, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = %s
+                    """
+                    cursor.execute(uf_sql, (len(all_chunks), existing_uf[0]))
+                else:
+                    # Insert new row
+                    uf_sql = """
+                        INSERT INTO uploaded_files 
+                        (session_id, created_by, workspace_id, file_name, table_name, file_size_mb, file_type, 
+                         total_columns, last_inserted_rows, table_extraction_status, column_extraction_status, 
+                         data_insights_status, data_insert_status, insights)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """
+                    uf_values = (
+                        session_id,
+                        created_by or 'system',
+                        safe_workspace_id,
+                        source_name,
+                        'Web Search Data',
+                        '0 MB',
+                        'web_search',
+                        0,
+                        len(all_chunks),
+                        'done',
+                        'done',
+                        'done',
+                        'done',
+                        '[]'
+                    )
+                    cursor.execute(uf_sql, uf_values)
                 db.commit()
             except Exception as e_uf:
                 print(f"MySQL Uploaded Files Error for web search: {e_uf}")
@@ -639,14 +684,14 @@ def save_graph_visualization(source_name: str, nodes: list, edges: list):
       physics: {
         stabilization: {
           enabled: true,
-          iterations: 150
+          iterations: 200
         },
         barnesHut: {
-          gravitationalConstant: -2000,
-          centralGravity: 0.3,
-          springLength: 95,
-          springConstant: 0.04,
-          damping: 0.09
+          gravitationalConstant: -15000,
+          centralGravity: 0.1,
+          springLength: 180,
+          springConstant: 0.03,
+          damping: 0.15
         }
       },
       interaction: {

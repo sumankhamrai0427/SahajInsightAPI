@@ -277,9 +277,10 @@ END
         FROM uploaded_files
         WHERE created_by = p_created_by
         AND session_id = p_session_id
-        AND table_extraction_status = 'done'
-        AND column_extraction_status = 'done'
-        OR data_insights_status = 'done';
+        AND (
+            (table_extraction_status = 'done' AND column_extraction_status = 'done')
+            OR data_insights_status = 'done'
+        );
 
 
         -- TOTAL FILE EXTRACTED
@@ -329,12 +330,14 @@ END
         LIMIT 1;
         -- AVG QUERY TIME
         SELECT
-            ROUND(
-                AVG(
-                    CAST(
-                        REPLACE(query_time, ' sec', '') AS DECIMAL(10,3)
-                    )
-                ), 3
+            COALESCE(
+                ROUND(
+                    AVG(
+                        CAST(
+                            REPLACE(query_time, ' sec', '') AS DECIMAL(10,3)
+                        )
+                    ), 3
+                ), 0
             ) AS avg_query_time
         FROM query_history
         WHERE created_by = p_created_by
@@ -344,16 +347,20 @@ END
         AND query_time != '';
         -- QUERY SUCCESS RATE
         SELECT
-            ROUND(
-                (SUM(is_success = 1) / COUNT(*)) * 100,
-                2
+            COALESCE(
+                ROUND(
+                    (SUM(is_success = 1) / NULLIF(COUNT(*), 0)) * 100,
+                    2
+                ), 0
             ) AS query_success_rate
         FROM query_history
         WHERE created_by = p_created_by
         AND session_id = p_session_id;
         -- AVG ROWS PER REPORT
         SELECT
-            ROUND(AVG(row_affected), 0) AS avg_rows_per_report
+            COALESCE(
+                ROUND(AVG(row_affected), 0), 0
+            ) AS avg_rows_per_report
         FROM saved_reports
         WHERE user_id = p_created_by
         AND session_id = p_session_id;

@@ -29,10 +29,21 @@ def delete_uploaded_file_controller():
         # -------------------------------
         # WEB SEARCH DELETE CHECK
         # -------------------------------
-        cursor.execute("SELECT COUNT(*) as count FROM normalized_knowledge WHERE session_id = %s AND source_type = 'web_search' AND source_name = %s", (session_id, file_name))
-        nk_count = cursor.fetchone()
-        if nk_count and nk_count['count'] > 0:
+        cursor.execute("SELECT id, file_type FROM uploaded_files WHERE session_id = %s AND file_name = %s LIMIT 1", (session_id, file_name))
+        uf_row = cursor.fetchone()
+        
+        is_web_search = False
+        if uf_row and uf_row['file_type'] == 'web_search':
+            is_web_search = True
+        else:
+            cursor.execute("SELECT COUNT(*) as count FROM normalized_knowledge WHERE session_id = %s AND source_type = 'web_search' AND source_name = %s", (session_id, file_name))
+            nk_count = cursor.fetchone()
+            if nk_count and nk_count['count'] > 0:
+                is_web_search = True
+                
+        if is_web_search:
             cursor.execute("DELETE FROM normalized_knowledge WHERE session_id = %s AND source_type = 'web_search' AND source_name = %s", (session_id, file_name))
+            cursor.execute("DELETE FROM uploaded_files WHERE session_id = %s AND file_type = 'web_search' AND file_name = %s", (session_id, file_name))
             conn.commit()
             return build_response(True, "Web Search Data deleted successfully", 200)
 

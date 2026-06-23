@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Graph Visualization - Basic_data.csv</title>
+  <title>Graph Visualization - web_search_Expert_buying_guides</title>
   <style type="text/css">
     body {
       background-color: #ffffff;
@@ -58,17 +58,17 @@
 </head>
 <body>
   <div id="header">
-    <h1>Graph Visualization: <span style="color: #0969da;">Basic_data.csv</span></h1>
+    <h1>Graph Visualization: <span style="color: #0969da;">web_search_Expert_buying_guides</span></h1>
     <div class="stats">
-      Entities: <span class="badge">10</span>
-      Relationships: <span class="badge">3</span>
+      Entities: <span class="badge">15</span>
+      Relationships: <span class="badge">15</span>
     </div>
   </div>
   <div id="network"></div>
 
   <script type="text/javascript">
-    var rawNodes = [{"id": "alice", "label": "Alice", "type": "Person", "color": "#58a6ff"}, {"id": "bob", "label": "Bob", "type": "Person", "color": "#58a6ff"}, {"id": "delhi", "label": "Delhi", "type": "City", "color": "#58a6ff"}, {"id": "id3", "label": "Charlie", "type": "Person", "color": "#58a6ff"}, {"id": "david", "label": "David", "type": "Person", "color": "#58a6ff"}, {"id": "chennai", "label": "Chennai", "type": "City", "color": "#58a6ff"}, {"id": "id5", "label": "Emma", "type": "Person", "color": "#58a6ff"}, {"id": "id6", "label": "Suman", "type": "Person", "color": "#58a6ff"}, {"id": "subhajit", "label": "Subhajit", "type": "Person", "color": "#58a6ff"}, {"id": "haldia", "label": "Haldia", "type": "City", "color": "#58a6ff"}];
-    var rawEdges = [{"from": "bob", "to": "delhi", "label": "LIVES_IN"}, {"from": "david", "to": "chennai", "label": "LIVES_IN"}, {"from": "subhajit", "to": "haldia", "label": "LIVES_IN"}];
+    var rawNodes = [{"id": "entity_expert", "label": "Expert", "type": "Entity", "color": "#58a6ff"}, {"id": "entity_person", "label": "Person", "type": "Entity", "color": "#58a6ff"}, {"id": "entity_skill", "label": "Skill", "type": "Entity", "color": "#58a6ff"}, {"id": "entity_knowledge", "label": "Knowledge", "type": "Entity", "color": "#58a6ff"}, {"id": "entity_subject", "label": "Subject", "type": "Entity", "color": "#58a6ff"}, {"id": "entity_education_platform", "label": "Education Platform", "type": "Entity", "color": "#58a6ff"}, {"id": "entity_video_lesson", "label": "Video Lesson", "type": "Entity", "color": "#58a6ff"}, {"id": "entity_test", "label": "Test", "type": "Entity", "color": "#58a6ff"}, {"id": "entity_practice_material", "label": "Practice Material", "type": "Entity", "color": "#58a6ff"}, {"id": "entity_source", "label": "Source", "type": "Entity", "color": "#58a6ff"}, {"id": "entity_dictionary", "label": "Dictionary", "type": "Entity", "color": "#58a6ff"}, {"id": "entity_website", "label": "Website", "type": "Entity", "color": "#58a6ff"}, {"id": "entity_mastery", "label": "Mastery", "type": "Entity", "color": "#58a6ff"}, {"id": "entity_experience", "label": "Experience", "type": "Entity", "color": "#58a6ff"}, {"id": "entity_competence", "label": "Competence", "type": "Entity", "color": "#58a6ff"}];
+    var rawEdges = [{"from": "entity_expert", "to": "entity_person", "label": "IS_A"}, {"from": "entity_expert", "to": "entity_skill", "label": "REQUIRES"}, {"from": "entity_expert", "to": "entity_knowledge", "label": "REQUIRES"}, {"from": "entity_expert", "to": "entity_subject", "label": "RELATES_TO"}, {"from": "entity_expert", "to": "entity_mastery", "label": "DEMONSTRATES"}, {"from": "entity_expert", "to": "entity_experience", "label": "REQUIRES"}, {"from": "entity_expert", "to": "entity_competence", "label": "REQUIRES"}, {"from": "entity_education_platform", "to": "entity_video_lesson", "label": "PROVIDES"}, {"from": "entity_education_platform", "to": "entity_test", "label": "PROVIDES"}, {"from": "entity_education_platform", "to": "entity_practice_material", "label": "PROVIDES"}, {"from": "entity_expert", "to": "entity_education_platform", "label": "USES"}, {"from": "entity_source", "to": "entity_website", "label": "IS_A"}, {"from": "entity_source", "to": "entity_dictionary", "label": "IS_A"}, {"from": "entity_dictionary", "to": "entity_expert", "label": "DEFINES"}, {"from": "entity_website", "to": "entity_expert", "label": "DEFINES"}];
 
     var nodes = new vis.DataSet(rawNodes.map(function(n) {
       var isCentral = n.type.toLowerCase() === 'transaction' || n.type.toLowerCase() === 'session';

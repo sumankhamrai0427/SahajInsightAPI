@@ -451,39 +451,104 @@ def sanitize_group_by(select_sql: str, table_name: str):
 def execute_sql_endpoint_controller():
     try:
         ai_sql = request.json.get("sql_query")
+        session_id = request.json.get("session_id")
+        created_by = request.json.get("created_by") or g.get("created_by") or "system"
+        workspace_id = request.json.get("workspace_id")
 
         if not ai_sql:
             return build_response(False, "Missing sql_query", 400)
 
         select_query = extract_select_query(ai_sql)
         if not select_query:
+            # Log failure to parse
+            try:
+                if session_id:
+                    conn = g.company_db
+                    log_cursor = conn.cursor()
+                    msg_query_id = f"exec_{int(time.time() * 1000)}"
+                    safe_workspace_id = int(workspace_id) if (workspace_id and str(workspace_id).strip().lower() not in ("null", "undefined", "")) else None
+                    log_cursor.callproc("sp_save_query", [
+                        session_id, safe_workspace_id, created_by, "Failed Parse Query", msg_query_id,
+                        ai_sql, ai_sql, "", "[]", 1, 0, 0, "0.0 sec", "NEW", None
+                    ])
+                    conn.commit()
+                    log_cursor.close()
+            except Exception as e_log:
+                print(f"[Auto Log Query Exec Parse Error] {e_log}")
             return build_response(False, "Failed to extract SELECT query", 400)
 
         #  only SELECT allowed
         if not is_safe_select(select_query):
+            # Log unsafe query failure
+            try:
+                if session_id:
+                    conn = g.company_db
+                    log_cursor = conn.cursor()
+                    msg_query_id = f"exec_{int(time.time() * 1000)}"
+                    safe_workspace_id = int(workspace_id) if (workspace_id and str(workspace_id).strip().lower() not in ("null", "undefined", "")) else None
+                    log_cursor.callproc("sp_save_query", [
+                        session_id, safe_workspace_id, created_by, "Unsafe Query Blocked", msg_query_id,
+                        select_query, ai_sql, select_query, "[]", 1, 0, 0, "0.0 sec", "NEW", None
+                    ])
+                    conn.commit()
+                    log_cursor.close()
+            except Exception as e_log:
+                print(f"[Auto Log Query Exec Unsafe Error] {e_log}")
             return build_response(False, "Only SELECT queries are allowed", 400)
        
         success, results, msg = run_select_query(select_query)
 
+        # Log query execution to query_history
+        try:
+            if session_id:
+                conn = g.company_db
+                log_cursor = conn.cursor()
+                
+                table_name = g.get("last_used_table")
+                table_names = [table_name] if table_name else []
+                default_title = f"Query on {table_name}" if table_name else "SQL execution log"
+                msg_query_id = f"exec_{int(time.time() * 1000)}"
+                
+                safe_workspace_id = int(workspace_id) if (workspace_id and str(workspace_id).strip().lower() not in ("null", "undefined", "")) else None
+                is_success_val = 1 if success else 0
+                row_count_val = results.get("total_rows", 0) if (success and results) else 0
+                query_time_val = results.get("execution_time", "0.0 sec") if (success and results) else "0.0 sec"
+                
+                log_cursor.callproc("sp_save_query", [
+                    session_id,
+                    safe_workspace_id,
+                    created_by,
+                    default_title,
+                    msg_query_id,
+                    select_query,                     # user_query
+                    ai_sql,                           # ai_response
+                    select_query,                     # executable_sql
+                    json.dumps(table_names),
+                    1,                                # is_execute
+                    is_success_val,                   # is_success
+                    row_count_val,                    # row_count
+                    query_time_val,                   # query_time
+                    "NEW",
+                    None                              # parent_query_id
+                ])
+                conn.commit()
+                log_cursor.close()
+        except Exception as e_log:
+            print(f"[Auto Log Query Exec Error] {e_log}")
+
         if success:
-
-
-            # NORMAL TABLE QUERY (UNCHANGED)
             total = results.get("total_rows", 0)
-
             table_name = g.get("last_used_table")
             visualization = build_insights(
                 table_name,
                 results.get("columns", [])
             )
-
             results["visualization"] = visualization
 
             msg = "Query executed successfully, but no data found." if total == 0 \
                 else f"Successfully fetched {total} rows."
 
             return build_response(True, msg, 200, results)
-
 
         return build_response(False, msg, 400)
 

@@ -75,6 +75,13 @@ def get_file_status_controller():
             FROM uploaded_files uf
             LEFT JOIN workspaces w ON uf.workspace_id = w.id
             WHERE {uf_where}
+              AND (uf.file_type != 'web_search' OR uf.id = (
+                  SELECT MAX(uf3.id) 
+                  FROM uploaded_files uf3 
+                  WHERE uf3.file_name = uf.file_name 
+                    AND uf3.file_type = 'web_search'
+                    AND (uf3.workspace_id = uf.workspace_id OR (uf3.workspace_id IS NULL AND uf.workspace_id IS NULL))
+              ))
             
             UNION ALL
             
@@ -105,7 +112,9 @@ def get_file_status_controller():
             WHERE nk.source_type = 'web_search' AND {nk_where}
               AND NOT EXISTS (
                   SELECT 1 FROM uploaded_files uf2 
-                  WHERE uf2.file_name = nk.source_name AND uf2.file_type = 'web_search'
+                  WHERE uf2.file_name = nk.source_name 
+                    AND uf2.file_type = 'web_search'
+                    AND (uf2.workspace_id = nk.workspace_id OR (uf2.workspace_id IS NULL AND nk.workspace_id IS NULL))
               )
             GROUP BY nk.source_name
         ) AS combined_results
