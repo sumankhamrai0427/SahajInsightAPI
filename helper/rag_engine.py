@@ -6,13 +6,25 @@ from database.dbConnection import get_company_db, get_master_db
 import json
 
 def _get_company_db_name(company_code):
-    master = get_master_db()
-    cur = master.cursor(dictionary=True)
-    cur.execute("SELECT company_db_name FROM companies WHERE company_code = %s", (company_code,))
-    row = cur.fetchone()
-    cur.close()
-    master.close()
-    return row["company_db_name"] if row else None
+    master = None
+    cur = None
+    try:
+        master = get_master_db()
+        cur = master.cursor(dictionary=True)
+        cur.execute("SELECT company_db_name FROM companies WHERE company_code = %s", (company_code,))
+        row = cur.fetchone()
+        return row["company_db_name"] if row else None
+    finally:
+        if cur is not None:
+            try:
+                cur.close()
+            except Exception:
+                pass
+        if master is not None:
+            try:
+                master.close()
+            except Exception:
+                pass
 
 def process_rag_chat(company_code: str, session_id: str, user_query: str, workspace_id: str = None):
     """
@@ -47,29 +59,40 @@ def process_rag_chat(company_code: str, session_id: str, user_query: str, worksp
         # 3. Retrieve from MySQL normalized_knowledge
         db_text = ""
         mysql_chunks = 0
+        db = None
+        cursor = None
         try:
             company_db_name = _get_company_db_name(company_code)
             if company_db_name:
                 db = get_company_db(company_db_name)
                 if db:
                     cursor = db.cursor(dictionary=True)
-                # simple full text like search using search terms
-                if search_terms:
-                    conditions = " OR ".join(["content LIKE %s" for _ in search_terms])
-                    params = [f"%{term}%" for term in search_terms]
-                    
-                    if workspace_id:
-                        conditions = f"({conditions}) AND workspace_id = %s"
-                        params.append(workspace_id)
+                    # simple full text like search using search terms
+                    if search_terms:
+                        conditions = " OR ".join(["content LIKE %s" for _ in search_terms])
+                        params = [f"%{term}%" for term in search_terms]
                         
-                    cursor.execute(f"SELECT content FROM normalized_knowledge WHERE {conditions} LIMIT 5", params)
-                    db_results = cursor.fetchall()
-                    mysql_chunks = len(db_results)
-                    db_text = "\n".join([r['content'] for r in db_results])
-                cursor.close()
-                db.close()
+                        if workspace_id:
+                            conditions = f"({conditions}) AND workspace_id = %s"
+                            params.append(workspace_id)
+                            
+                        cursor.execute(f"SELECT content FROM normalized_knowledge WHERE {conditions} LIMIT 5", params)
+                        db_results = cursor.fetchall()
+                        mysql_chunks = len(db_results)
+                        db_text = "\n".join([r['content'] for r in db_results])
         except Exception as e:
             print(f"MySQL RAG Error: {e}")
+        finally:
+            if cursor is not None:
+                try:
+                    cursor.close()
+                except Exception:
+                    pass
+            if db is not None:
+                try:
+                    db.close()
+                except Exception:
+                    pass
 
         # 4. Build Prompt for LLM
         prompt = f"""
