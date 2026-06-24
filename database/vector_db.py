@@ -1,4 +1,9 @@
 import os
+try:
+    import numpy as np
+    np.float_ = np.float64
+except ImportError:
+    pass
 import chromadb
 from chromadb.config import Settings
 

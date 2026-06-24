@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Graph Visualization - web_search_Online_courses_(Cour</title>
+  <style type="text/css">
+    body {
+      background-color: #ffffff;
+      color: #333333;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+    }
+    #header {
+      padding: 15px 20px;
+      background-color: rgba(246, 248, 250, 0.9);
+      border-bottom: 1px solid #d0d7de;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 10;
+    }
+    #header h1 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+      color: #24292f;
+    }
+    #header .stats {
+      font-size: 12px;
+      color: #57606a;
+    }
+    #network {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+    .badge {
+      background-color: #0969da;
+      color: #ffffff;
+      padding: 3px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      margin-left: 5px;
+      font-weight: 600;
+    }
+  </style>
+  <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+</head>
+<body>
+  <div id="header">
+    <h1>Graph Visualization: <span style="color: #0969da;">web_search_Online_courses_(Cour</span></h1>
+    <div class="stats">
+      Entities: <span class="badge">12</span>
+      Relationships: <span class="badge">11</span>
+    </div>
+  </div>
+  <div id="network"></div>
+
+  <script type="text/javascript">
+    var rawNodes = [{"id": "website_poki", "label": "Poki", "type": "Website", "color": "#58a6ff"}, {"id": "website_crazygames", "label": "CrazyGames", "type": "Website", "color": "#58a6ff"}, {"id": "website_onlinesbi", "label": "OnlineSBI", "type": "Website", "color": "#58a6ff"}, {"id": "bank_state_bank_of_india", "label": "State Bank of India", "type": "Bank", "color": "#58a6ff"}, {"id": "website_state_bank_of_india___personal_banking", "label": "State Bank of India - Personal Banking", "type": "Website", "color": "#58a6ff"}, {"id": "website_sbi_branches", "label": "SBI Branches", "type": "Website", "color": "#58a6ff"}, {"id": "service_yono_lite", "label": "YONO Lite", "type": "Service", "color": "#58a6ff"}, {"id": "service_mcash", "label": "mCASH", "type": "Service", "color": "#58a6ff"}, {"id": "category_free_online_games", "label": "Free Online Games", "type": "Category", "color": "#79c0ff"}, {"id": "category_internet_banking", "label": "Internet Banking", "type": "Category", "color": "#79c0ff"}, {"id": "category_personal_banking", "label": "Personal Banking", "type": "Category", "color": "#79c0ff"}, {"id": "category_business_banking", "label": "Business Banking", "type": "Category", "color": "#79c0ff"}];
+    var rawEdges = [{"from": "website_poki", "to": "category_free_online_games", "label": "PROVIDES"}, {"from": "website_crazygames", "to": "category_free_online_games", "label": "PROVIDES"}, {"from": "website_onlinesbi", "to": "category_internet_banking", "label": "PROVIDES"}, {"from": "bank_state_bank_of_india", "to": "website_onlinesbi", "label": "HOSTS"}, {"from": "bank_state_bank_of_india", "to": "website_state_bank_of_india___personal_banking", "label": "HOSTS"}, {"from": "website_state_bank_of_india___personal_banking", "to": "category_internet_banking", "label": "PROVIDES"}, {"from": "website_state_bank_of_india___personal_banking", "to": "category_personal_banking", "label": "PROVIDES"}, {"from": "website_state_bank_of_india___personal_banking", "to": "service_mcash", "label": "OFFERS"}, {"from": "website_onlinesbi", "to": "service_mcash", "label": "UNAVAILABLE_IN"}, {"from": "website_onlinesbi", "to": "service_yono_lite", "label": "UNAVAILABLE_IN"}, {"from": "website_state_bank_of_india___personal_banking", "to": "website_sbi_branches", "label": "REFERENCES"}];
+
+    var nodes = new vis.DataSet(rawNodes.map(function(n) {
+      var isCentral = n.type.toLowerCase() === 'transaction' || n.type.toLowerCase() === 'session';
+      return {
+        id: n.id,
+        label: n.label,
+        shape: 'dot',
+        size: isCentral ? 24 : 16,
+        color: {
+          background: n.color || '#97c2fc',
+          border: '#2b7ce9',
+          highlight: {
+            background: '#d2e5ff',
+            border: '#2b7ce9'
+          }
+        },
+        font: {
+          size: 12,
+          color: '#333333',
+          face: 'sans-serif'
+        },
+        borderWidth: 1.5
+      };
+    }));
+
+    var edges = new vis.DataSet(rawEdges.map(function(e) {
+      return {
+        from: e.from,
+        to: e.to,
+        label: e.label,
+        arrows: {
+          to: { enabled: true, scaleFactor: 0.6 }
+        },
+        color: {
+          color: '#2b7ce9',
+          highlight: '#2b7ce9',
+          hover: '#2b7ce9'
+        },
+        font: {
+          size: 10,
+          color: '#333333',
+          align: 'middle'
+        },
+        smooth: {
+          type: 'continuous'
+        }
+      };
+    }));
+
+    var container = document.getElementById('network');
+    var data = {
+      nodes: nodes,
+      edges: edges
+    };
+    
+    var options = {
+      physics: {
+        stabilization: {
+          enabled: true,
+          iterations: 200
+        },
+        barnesHut: {
+          gravitationalConstant: -15000,
+          centralGravity: 0.1,
+          springLength: 180,
+          springConstant: 0.03,
+          damping: 0.15
+        }
+      },
+      interaction: {
+        hover: true,
+        tooltipDelay: 200,
+        navigationButtons: true,
+        keyboard: true
+      }
+    };
+    
+    var network = new vis.Network(container, data, options);
+  </script>
+</body>
+</html>

@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Graph Visualization - web_search_Current_salary_bench</title>
+  <style type="text/css">
+    body {
+      background-color: #ffffff;
+      color: #333333;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+    }
+    #header {
+      padding: 15px 20px;
+      background-color: rgba(246, 248, 250, 0.9);
+      border-bottom: 1px solid #d0d7de;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 10;
+    }
+    #header h1 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+      color: #24292f;
+    }
+    #header .stats {
+      font-size: 12px;
+      color: #57606a;
+    }
+    #network {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+    .badge {
+      background-color: #0969da;
+      color: #ffffff;
+      padding: 3px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      margin-left: 5px;
+      font-weight: 600;
+    }
+  </style>
+  <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+</head>
+<body>
+  <div id="header">
+    <h1>Graph Visualization: <span style="color: #0969da;">web_search_Current_salary_bench</span></h1>
+    <div class="stats">
+      Entities: <span class="badge">25</span>
+      Relationships: <span class="badge">22</span>
+    </div>
+  </div>
+  <div id="network"></div>
+
+  <script type="text/javascript">
+    var rawNodes = [{"id": "concept_electric_current", "label": "Electric Current", "type": "Concept", "color": "#58a6ff"}, {"id": "concept_charges_in_motion", "label": "Charges in Motion", "type": "Concept", "color": "#58a6ff"}, {"id": "natural_phenomenon_lightning", "label": "Lightning", "type": "Natural Phenomenon", "color": "#58a6ff"}, {"id": "source_ncert", "label": "NCERT", "type": "Source", "color": "#58a6ff"}, {"id": "category_international_system_of_units", "label": "International System of Units", "type": "Category", "color": "#79c0ff"}, {"id": "category_electric_current", "label": "Electric current", "type": "Category", "color": "#79c0ff"}, {"id": "category_ampere", "label": "Ampere", "type": "Category", "color": "#79c0ff"}, {"id": "category_amp", "label": "Amp", "type": "Category", "color": "#79c0ff"}, {"id": "concept_electric_charge", "label": "Electric charge", "type": "Concept", "color": "#58a6ff"}, {"id": "concept_circuits", "label": "Circuits", "type": "Concept", "color": "#58a6ff"}, {"id": "concept_resistance", "label": "Resistance", "type": "Concept", "color": "#58a6ff"}, {"id": "concept_current_electricity", "label": "Current electricity", "type": "Concept", "color": "#58a6ff"}, {"id": "bank_current", "label": "Current", "type": "Bank", "color": "#58a6ff"}, {"id": "user_user", "label": "User", "type": "User", "color": "#d2a8ff"}, {"id": "category_banking_account", "label": "Banking Account", "type": "Category", "color": "#79c0ff"}, {"id": "action_recommendation", "label": "Recommendation", "type": "Action", "color": "#58a6ff"}, {"id": "concept_charged_particles", "label": "Charged Particles", "type": "Concept", "color": "#58a6ff"}, {"id": "particle_electrons", "label": "Electrons", "type": "Particle", "color": "#58a6ff"}, {"id": "particle_ions", "label": "Ions", "type": "Particle", "color": "#58a6ff"}, {"id": "material_conductor", "label": "Conductor", "type": "Material", "color": "#58a6ff"}, {"id": "process_stream", "label": "Stream", "type": "Process", "color": "#58a6ff"}, {"id": "mathematical_formula", "label": "Formula", "type": "Mathematical", "color": "#58a6ff"}, {"id": "measurement_units", "label": "Units", "type": "Measurement", "color": "#58a6ff"}, {"id": "currenttype_alternating_current", "label": "Alternating Current", "type": "CurrentType", "color": "#58a6ff"}, {"id": "currenttype_direct_current", "label": "Direct Current", "type": "CurrentType", "color": "#58a6ff"}];
+    var rawEdges = [{"from": "concept_charges_in_motion", "to": "concept_electric_current", "label": "CONSTITUTES"}, {"from": "concept_electric_current", "to": "natural_phenomenon_lightning", "label": "OCCURS_NATURALLY_IN"}, {"from": "source_ncert", "to": "concept_electric_current", "label": "SOURCE_OF"}, {"from": "category_international_system_of_units", "to": "category_electric_current", "label": "DEFINES"}, {"from": "category_electric_current", "to": "category_ampere", "label": "EXPRESSED_IN"}, {"from": "category_ampere", "to": "category_amp", "label": "ALSO_CALLED"}, {"from": "concept_electric_current", "to": "concept_electric_charge", "label": "IS_DEFINED_AS_FLOW_OF"}, {"from": "concept_current_electricity", "to": "concept_circuits", "label": "BASIC_FOR_UNDERSTANDING"}, {"from": "concept_current_electricity", "to": "concept_resistance", "label": "BASIC_FOR_UNDERSTANDING"}, {"from": "user_user", "to": "bank_current", "label": "USES"}, {"from": "user_user", "to": "category_banking_account", "label": "HAS"}, {"from": "user_user", "to": "action_recommendation", "label": "MAKES"}, {"from": "bank_current", "to": "category_banking_account", "label": "IS_A"}, {"from": "concept_electric_current", "to": "concept_charged_particles", "label": "DEFINED_AS"}, {"from": "concept_charged_particles", "to": "particle_electrons", "label": "INCLUDES"}, {"from": "concept_charged_particles", "to": "particle_ions", "label": "INCLUDES"}, {"from": "concept_electric_current", "to": "material_conductor", "label": "MOVES_THROUGH"}, {"from": "concept_electric_current", "to": "process_stream", "label": "IS_A"}, {"from": "concept_electric_current", "to": "mathematical_formula", "label": "HAS"}, {"from": "concept_electric_current", "to": "measurement_units", "label": "HAS"}, {"from": "concept_electric_current", "to": "currenttype_alternating_current", "label": "CAN_BE"}, {"from": "concept_electric_current", "to": "currenttype_direct_current", "label": "CAN_BE"}];
+
+    var nodes = new vis.DataSet(rawNodes.map(function(n) {
+      var isCentral = n.type.toLowerCase() === 'transaction' || n.type.toLowerCase() === 'session';
+      return {
+        id: n.id,
+        label: n.label,
+        shape: 'dot',
+        size: isCentral ? 24 : 16,
+        color: {
+          background: n.color || '#97c2fc',
+          border: '#2b7ce9',
+          highlight: {
+            background: '#d2e5ff',
+            border: '#2b7ce9'
+          }
+        },
+        font: {
+          size: 12,
+          color: '#333333',
+          face: 'sans-serif'
+        },
+        borderWidth: 1.5
+      };
+    }));
+
+    var edges = new vis.DataSet(rawEdges.map(function(e) {
+      return {
+        from: e.from,
+        to: e.to,
+        label: e.label,
+        arrows: {
+          to: { enabled: true, scaleFactor: 0.6 }
+        },
+        color: {
+          color: '#2b7ce9',
+          highlight: '#2b7ce9',
+          hover: '#2b7ce9'
+        },
+        font: {
+          size: 10,
+          color: '#333333',
+          align: 'middle'
+        },
+        smooth: {
+          type: 'continuous'
+        }
+      };
+    }));
+
+    var container = document.getElementById('network');
+    var data = {
+      nodes: nodes,
+      edges: edges
+    };
+    
+    var options = {
+      physics: {
+        stabilization: {
+          enabled: true,
+          iterations: 200
+        },
+        barnesHut: {
+          gravitationalConstant: -15000,
+          centralGravity: 0.1,
+          springLength: 180,
+          springConstant: 0.03,
+          damping: 0.15
+        }
+      },
+      interaction: {
+        hover: true,
+        tooltipDelay: 200,
+        navigationButtons: true,
+        keyboard: true
+      }
+    };
+    
+    var network = new vis.Network(container, data, options);
+  </script>
+</body>
+</html>

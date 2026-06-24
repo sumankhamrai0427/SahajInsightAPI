@@ -100,13 +100,15 @@ def process_and_store_data(company_code: str, session_id: str, df: pd.DataFrame,
             ids.append(chunk_id)
             
             # Extract graph data:
+            # - Extract only if ingest_to_vector_graph is True
             # - For web_search: extract all chunks
             # - For CSVs: extract up to the first 15 chunks to limit LLM cost
             should_extract = False
-            if "web_search" in source_name:
-                should_extract = True
-            elif extracted_chunks_count < MAX_CSV_GRAPH_CHUNKS:
-                should_extract = True
+            if ingest_to_vector_graph:
+                if "web_search" in source_name:
+                    should_extract = True
+                elif extracted_chunks_count < MAX_CSV_GRAPH_CHUNKS:
+                    should_extract = True
                 
             if should_extract:
                 nodes, edges = extract_entities_with_llm(chunk)
@@ -155,14 +157,14 @@ def process_and_store_data(company_code: str, session_id: str, df: pd.DataFrame,
                     all_nodes.extend(normalized_nodes)
                     all_edges.extend(normalized_edges)
 
-    # 1. Store in ChromaDB
-    if ingest_to_vector_graph:
-        try:
-            add_chunks_to_chroma(company_code, all_chunks, metadatas, ids)
-        except Exception as e:
-            return False, f"ChromaDB Error: {e}"
+    # 1. Store in ChromaDB (Always)
+    try:
+        add_chunks_to_chroma(company_code, all_chunks, metadatas, ids)
+    except Exception as e:
+        return False, f"ChromaDB Error: {e}"
 
-        # 2. Store in ArangoDB
+    # 2. Store in ArangoDB (Graph DB) only if requested
+    if ingest_to_vector_graph and (all_nodes or all_edges):
         try:
             add_graph_data(company_code, all_nodes, all_edges)
         except Exception as e:
@@ -170,8 +172,7 @@ def process_and_store_data(company_code: str, session_id: str, df: pd.DataFrame,
             
         # Save HTML graph visualization locally
         try:
-            if all_nodes or all_edges:
-                save_graph_visualization(source_name, all_nodes, all_edges)
+            save_graph_visualization(source_name, all_nodes, all_edges)
         except Exception as e:
             print(f"Graph Visual Save Error: {e}")
 
@@ -267,8 +268,11 @@ def process_and_store_text(company_code: str, session_id: str, text: str, source
         metadatas.append(meta)
         ids.append(chunk_id)
         
-        # Extract graph data for web search
-        nodes, edges = extract_entities_with_llm(chunk)
+        # Extract graph data only if requested
+        nodes, edges = ([], [])
+        if ingest_to_vector_graph:
+            nodes, edges = extract_entities_with_llm(chunk)
+            
         if nodes or edges:
             key_map = {}
             normalized_nodes = []
@@ -308,24 +312,22 @@ def process_and_store_text(company_code: str, session_id: str, text: str, source
             all_nodes.extend(normalized_nodes)
             all_edges.extend(normalized_edges)
 
-    # 1. Store in ChromaDB
-    if ingest_to_vector_graph:
-        try:
-            add_chunks_to_chroma(company_code, all_chunks, metadatas, ids)
-        except Exception as e:
-            return False, f"ChromaDB Error: {e}"
+    # 1. Store in ChromaDB (Always)
+    try:
+        add_chunks_to_chroma(company_code, all_chunks, metadatas, ids)
+    except Exception as e:
+        return False, f"ChromaDB Error: {e}"
 
-        # 2. Store in ArangoDB
+    # 2. Store in ArangoDB (Graph DB) only if requested
+    if ingest_to_vector_graph and (all_nodes or all_edges):
         try:
-            if all_nodes or all_edges:
-                add_graph_data(company_code, all_nodes, all_edges)
+            add_graph_data(company_code, all_nodes, all_edges)
         except Exception as e:
             print(f"ArangoDB Error: {e}")
             
         # Save HTML graph visualization locally
         try:
-            if all_nodes or all_edges:
-                save_graph_visualization(source_name, all_nodes, all_edges)
+            save_graph_visualization(source_name, all_nodes, all_edges)
         except Exception as e:
             print(f"Graph Visual Save Error: {e}")
 
