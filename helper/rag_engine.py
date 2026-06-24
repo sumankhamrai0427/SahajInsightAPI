@@ -118,31 +118,46 @@ def process_rag_chat(company_code: str, session_id: str, user_query: str, worksp
                 except Exception:
                     pass
 
-        # 4. Build Prompt for LLM
-        prompt = f"""
-        You are an intelligent data assistant answering user questions. You must use the provided context to identify specific entities, metrics, or records (e.g., customer names, car models, purchased items, etc.).
+        # Check if we have any context retrieved
+        has_context = bool(vector_text.strip() or db_text.strip() or graph_text.strip())
         
-        If the context provides the specific records but lacks general information/explanation about them (e.g., whether a car model is suitable for city driving, general use cases, expert opinions, etc.), you are encouraged to supplement the answer using your own general knowledge.
-        
-        --- VECTOR CONTEXT (Semantic Chunks) ---
-        {vector_text if vector_text else "No specific vector context found."}
-        
-        --- DATABASE CONTEXT (Normalized Knowledge) ---
-        {db_text if db_text else "No specific database context found."}
-        
-        --- GRAPH CONTEXT (Entity Relationships) ---
-        {graph_text if graph_text else "No specific graph relationships found."}
-        
-        ---
-        User Question: {user_query}
-        
-        Answer the user question thoroughly. Highlight which parts of the information came from the database context (like customer names, purchased car models, etc.) and which parts are based on general expert knowledge (like suitability, use cases, etc.).
-        
-        If the database/vector/graph context is completely empty or contains absolutely no data matching the overall domain of the query (e.g. no customers, cars, or order records exist in the context tables), only then say "I don't have enough data to answer that." Otherwise, synthesize the available records with your expert general knowledge to provide a comprehensive response.
-        """
-        
-        # 4. Get LLM Answer
-        ai_answer = call_llm(prompt)
+        if not has_context:
+            ai_answer = "I don't have enough data to answer that."
+        else:
+            # 4. Build Prompt for LLM
+            prompt = f"""
+            You are an intelligent data assistant. You must answer the user's question STRICTLY using only the provided context below.
+            
+            --- CONTEXT DATA ---
+            
+            --- VECTOR CONTEXT (Semantic Chunks) ---
+            {vector_text if vector_text else "No specific vector context found."}
+            
+            --- DATABASE CONTEXT (Normalized Knowledge) ---
+            {db_text if db_text else "No specific database context found."}
+            
+            --- GRAPH CONTEXT (Entity Relationships) ---
+            {graph_text if graph_text else "No specific graph relationships found."}
+            
+            ---
+            User Question: {user_query}
+            
+            CRITICAL RULES:
+            1. Answer the question STRICTLY using information directly present in the CONTEXT DATA above.
+            2. Do NOT use your own general pre-trained knowledge to answer questions that are not explicitly documented/described in the context.
+            3. If the context does not contain the answer, or if the user's question is unrelated to the context, you must reply with exactly: "I don't have enough data to answer that." Do not try to make up, supplement, or guess the answer.
+            4. If the context contains no relevant information for the user's question (for example, if the question is "what is AI" and the context does not contain specific information defining AI), you must reply with exactly: "I don't have enough data to answer that."
+            
+            Answer:
+            """
+            
+            # 4. Get LLM Answer
+            ai_answer = call_llm(prompt)
+            
+            # Sanitize LLM response if it indicates lack of data
+            lower_answer = ai_answer.lower()
+            if "don't have" in lower_answer or "not enough data" in lower_answer or "no data" in lower_answer or "do not have" in lower_answer:
+                ai_answer = "I don't have enough data to answer that."
         
         # Prepend source URLs/references to the RAG Chat response
         import re
@@ -173,15 +188,19 @@ def process_rag_chat(company_code: str, session_id: str, user_query: str, worksp
                             
         final_sources = unique_sources + db_sources
         
-        if final_sources:
-            source_header = "Sources:\n" + "\n".join(f"- {s}" for s in final_sources) + "\n\n---\n\n"
+        if ai_answer == "I don't have enough data to answer that.":
+            # Do not prepend source headers
+            pass
         else:
-            if vector_context or db_text or graph_text:
-                source_header = "Source: Database / Uploaded Files\n\n---\n\n"
+            if final_sources:
+                source_header = "Sources:\n" + "\n".join(f"- {s}" for s in final_sources) + "\n\n---\n\n"
             else:
-                source_header = "Source: AI General Knowledge\n\n---\n\n"
-                
-        ai_answer = source_header + ai_answer
+                if vector_context or db_text or graph_text:
+                    source_header = "Source: Database / Uploaded Files\n\n---\n\n"
+                else:
+                    source_header = "Source: AI General Knowledge\n\n---\n\n"
+                    
+            ai_answer = source_header + ai_answer
         
         # 5. Build final response
         return build_response(True, "RAG Chat Successful", 200, {
