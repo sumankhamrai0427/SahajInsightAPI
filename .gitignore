@@ -116,6 +116,7 @@ devenv/
 
 # Project specific
 uploads/
+Graph/
 vector_store/
 *.db
 *.sqlite3
