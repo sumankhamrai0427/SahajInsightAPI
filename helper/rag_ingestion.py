@@ -465,7 +465,10 @@ def ingest_uploaded_csv(company_code: str, session_id: str, file_path: str, work
     Pipeline for user uploaded CSV.
     """
     try:
-        df = pd.read_csv(file_path)
+        try:
+            df = pd.read_csv(file_path, on_bad_lines='skip')
+        except TypeError:
+            df = pd.read_csv(file_path, error_bad_lines=False)
         import os
         filename = os.path.basename(file_path)
         return process_and_store_data(company_code, session_id, df, filename, workspace_id, ingest_to_vector_graph=ingest_to_vector_graph)

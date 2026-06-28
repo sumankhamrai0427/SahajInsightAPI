@@ -139,6 +139,33 @@ def align_csv_to_schema(df: pd.DataFrame, schema: list, drop_unmapped=False):
                 used_csv_cols.add(ccol)
                 break
 
+    # Pass 1.5: Match by stripping common suffixes/prefixes (e.g. salesperson_id -> salesperson)
+    unmapped_schema_cols = [c for c in schema_cols if c not in mapping]
+    
+    def strip_helper(s):
+        s = str(s).lower().strip()
+        # strip common endings
+        for suffix in ['_id', 'id', '_no', 'no', '_code', 'code', '_num', 'num', '_name', 'name']:
+            if s.endswith(suffix) and len(s) > len(suffix):
+                s = s[:-len(suffix)]
+        # strip common starts
+        for prefix in ['id_', 'num_', 'no_']:
+            if s.startswith(prefix) and len(s) > len(prefix):
+                s = s[len(prefix):]
+        return re.sub(r'[^a-z0-9]', '', s)
+
+    for scol in unmapped_schema_cols:
+        scol_stripped = strip_helper(scol)
+        if not scol_stripped:
+            continue
+        for ccol in csv_cols:
+            if ccol in used_csv_cols:
+                continue
+            if strip_helper(ccol) == scol_stripped:
+                mapping[scol] = ccol
+                used_csv_cols.add(ccol)
+                break
+
     # Pass 2: Fuzzy/Sub-string match or positional fallback for remaining columns
     unmapped_schema_cols = [c for c in schema_cols if c not in mapping]
     unmapped_csv_cols = [c for c in csv_cols if c not in used_csv_cols]
@@ -184,12 +211,12 @@ def align_csv_to_schema(df: pd.DataFrame, schema: list, drop_unmapped=False):
             
     return new_df
 
-def build_preview_response(file_name, table_name, schema=None, is_existing=False):
+def build_preview_response(file_name, table_name, schema=None, is_existing=False, has_header=True):
     path = os.path.join(UPLOAD_FOLDER, file_name)
     if not os.path.exists(path):
         raise Exception("CSV file missing")
 
-    df = pd.read_csv(path, dtype=str, encoding="utf-8-sig")
+    df = load_csv(path, has_header)
     df.columns = clean_column_names(df.columns)
     df = df.where(pd.notnull(df), None)
 
@@ -218,19 +245,46 @@ def build_preview_response(file_name, table_name, schema=None, is_existing=False
 # CSV Header Handling
 # =========================
 
-def load_csv(path, has_header: bool):
+def load_csv(path, has_header: bool, chunksize=None):
     """
-    Load CSV based on header flag
+    Load CSV based on header flag with robust handling of bad lines and custom delimiters.
     """
-    if has_header:
-        return pd.read_csv(path, dtype=str, encoding="utf-8-sig")
-    else:
-        return pd.read_csv(
-            path,
-            dtype=str,
-            encoding="utf-8-sig",
-            header=None      # 🔥 KEY LINE
-        )
+    kwargs = {
+        "dtype": str,
+        "encoding": "utf-8-sig",
+    }
+    if not has_header:
+        kwargs["header"] = None
+    if chunksize is not None:
+        kwargs["chunksize"] = chunksize
+
+    # First attempt: standard comma-separated load
+    try:
+        return pd.read_csv(path, **kwargs)
+    except Exception:
+        # Second attempt: sniff delimiter and skip bad lines
+        delimiter = ','
+        try:
+            with open(path, "r", encoding="utf-8-sig", errors="ignore") as fh:
+                sample = fh.read(4096)
+                try:
+                    dialect = csv.Sniffer().sniff(sample)
+                    delimiter = dialect.delimiter
+                except Exception:
+                    delimiter = ','
+        except Exception:
+            pass
+
+        kwargs["delimiter"] = delimiter
+
+        try:
+            return pd.read_csv(path, on_bad_lines='skip', **kwargs)
+        except TypeError:
+            try:
+                return pd.read_csv(path, error_bad_lines=False, **kwargs)
+            except Exception:
+                # If everything fails, try reading without bad lines flag just in case
+                return pd.read_csv(path, **kwargs)
 
 
 def apply_default_headers(df: pd.DataFrame):
@@ -495,6 +549,30 @@ Sample data (first 500 rows):
 
             for col in final:
                 col["primary"] = (col["column"] == best["column"])
+
+        # AUTOMATIC ID GENERATION RULE:
+        # If 'id' column is not found in the final schema, automatically create an 'id' column 
+        # and treat it as the primary key.
+        id_exists = any(c["column"].lower() == "id" for c in final)
+        if not id_exists:
+            final.insert(0, {
+                "column": "id",
+                "datatype": "INT",
+                "length": None,
+                "primary": True
+            })
+            # Ensure only this injected 'id' is marked as primary
+            for col in final[1:]:
+                col["primary"] = False
+        else:
+            # If 'id' exists, make sure at least one column is marked primary.
+            # If no column is primary, mark the 'id' column as primary.
+            pk_exists = any(c.get("primary") for c in final)
+            if not pk_exists:
+                for col in final:
+                    if col["column"].lower() == "id":
+                        col["primary"] = True
+                        break
 
         return final
 
@@ -1034,6 +1112,7 @@ def upload_and_insights_new_controller():
             file_name = body.get("file_name")
             table_name = body.get("table_name")
             schema = body.get("schema")
+            has_header = body.get("has_header", True)
 
             if not file_name or not table_name or not schema:
                 cur.close()
@@ -1164,7 +1243,8 @@ def upload_and_insights_new_controller():
                     file_name=file_name,
                     table_name=table_name,
                     schema=schema,
-                    is_existing=False
+                    is_existing=False,
+                    has_header=has_header
                 )
             except Exception as e:
                 cur.close()
@@ -1410,13 +1490,7 @@ def upload_and_insights_new_controller():
                 total_cols = 0
 
                 try:
-                    reader = pd.read_csv(
-                    path,
-                    dtype=str,
-                    encoding="utf-8-sig",
-                    chunksize=CSV_CHUNK_SIZE,
-                    header=0 if has_header else None
-                )
+                    reader = load_csv(path, has_header, chunksize=CSV_CHUNK_SIZE)
 
                     processed_rows = 0
                     for chunk_index, df_chunk in enumerate(reader):
