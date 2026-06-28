@@ -973,7 +973,10 @@ def upload_and_insights_new_controller():
                         delimiter = dialect.delimiter
                     except Exception:
                         delimiter = ','
-                df = pd.read_csv(path, dtype=str, delimiter=delimiter, encoding="utf-8-sig", error_bad_lines=False)
+                try:
+                    df = pd.read_csv(path, dtype=str, delimiter=delimiter, encoding="utf-8-sig", on_bad_lines='skip')
+                except TypeError:
+                    df = pd.read_csv(path, dtype=str, delimiter=delimiter, encoding="utf-8-sig", error_bad_lines=False)
 
             # header cleaning: never-null names & uniqueness
             raw_cols = list(df.columns)
