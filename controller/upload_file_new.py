@@ -895,8 +895,6 @@ def upload_and_insights_new_controller():
             session_id = request.form.get("session_id")
             created_by = request.form.get("created_by")
             workspace_id = request.form.get("workspace_id")
-            if not workspace_id or workspace_id.strip() == "":
-                workspace_id = None
             body = dict(request.form)
         else:
             body = request.get_json(force=True)
@@ -907,8 +905,19 @@ def upload_and_insights_new_controller():
             # file_name may be sent for preview/insert
             file_name = body.get("file_name")
 
+        # Sanitize workspace_id (must be a valid integer workspace ID, cannot be 'all' or empty)
+        if workspace_id is not None:
+            workspace_id_str = str(workspace_id).strip().lower()
+            if workspace_id_str in ["", "all", "undefined", "null"]:
+                workspace_id = None
+            else:
+                try:
+                    workspace_id = int(workspace_id)
+                except ValueError:
+                    workspace_id = None
+
         if not session_id or not created_by or not workspace_id:
-            return build_response(False, "session_id, created_by & workspace_id required", 400)
+            return build_response(False, "session_id, created_by & a specific workspace_id are required", 400)
         
         if not hasattr(g, "company_db"):
             return build_response(False, "Invalid session", 401)

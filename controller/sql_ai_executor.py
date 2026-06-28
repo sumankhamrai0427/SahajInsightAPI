@@ -465,7 +465,7 @@ def execute_sql_endpoint_controller():
                 if session_id:
                     conn = g.company_db
                     log_cursor = conn.cursor()
-                    msg_query_id = f"exec_{int(time.time() * 1000)}"
+                    msg_query_id = int(time.time() * 1000)
                     safe_workspace_id = int(workspace_id) if (workspace_id and str(workspace_id).strip().lower() not in ("null", "undefined", "")) else None
                     log_cursor.callproc("sp_save_query", [
                         session_id, safe_workspace_id, created_by, "Failed Parse Query", msg_query_id,
@@ -484,7 +484,7 @@ def execute_sql_endpoint_controller():
                 if session_id:
                     conn = g.company_db
                     log_cursor = conn.cursor()
-                    msg_query_id = f"exec_{int(time.time() * 1000)}"
+                    msg_query_id = int(time.time() * 1000)
                     safe_workspace_id = int(workspace_id) if (workspace_id and str(workspace_id).strip().lower() not in ("null", "undefined", "")) else None
                     log_cursor.callproc("sp_save_query", [
                         session_id, safe_workspace_id, created_by, "Unsafe Query Blocked", msg_query_id,
@@ -507,7 +507,7 @@ def execute_sql_endpoint_controller():
                 table_name = g.get("last_used_table")
                 table_names = [table_name] if table_name else []
                 default_title = f"Query on {table_name}" if table_name else "SQL execution log"
-                msg_query_id = f"exec_{int(time.time() * 1000)}"
+                msg_query_id = int(time.time() * 1000)
                 
                 safe_workspace_id = int(workspace_id) if (workspace_id and str(workspace_id).strip().lower() not in ("null", "undefined", "")) else None
                 is_success_val = 1 if success else 0
